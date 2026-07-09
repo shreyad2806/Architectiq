@@ -14,16 +14,24 @@ def client() -> TestClient:
 def sample_architecture() -> dict:
     """Return a valid sample architecture request payload."""
     return {
-        "name": "Production RAG Pipeline",
-        "description": "Retrieval-augmented generation for customer support.",
-        "components": [
-            {"type": "llm", "provider": "openai", "model": "gpt-4o"},
-            {"type": "vector_store", "provider": "pinecone"},
-            {"type": "gateway", "provider": "internal"},
-        ],
-        "estimated_requests_per_month": 1_000_000,
-        "average_input_tokens": 1_500,
-        "average_output_tokens": 400,
+        "project_name": "Production RAG Pipeline",
+        "llm": "gpt-4o",
+        "embedding_model": "text-embedding-3-small",
+        "vector_db": "pinecone",
+        "framework": "FastAPI",
+        "memory": False,
+        "rag_enabled": True,
+        "cache_enabled": True,
+        "prompt_strategy": "few-shot",
+        "monthly_requests": 1_000_000,
+        "average_prompt_tokens": 1_500,
+        "average_completion_tokens": 400,
+        "context_window": 128_000,
+        "concurrent_users": 5_000,
+        "observability": True,
+        "authentication": True,
+        "rate_limiting": True,
+        "retry_strategy": True,
     }
 
 
@@ -31,14 +39,22 @@ def sample_architecture() -> dict:
 def sample_architecture_with_issues() -> dict:
     """Return a sample architecture request with several production issues."""
     return {
-        "name": "Costly RAG Pipeline",
-        "description": "High traffic RAG pipeline with missing production patterns.",
-        "components": [
-            {"type": "llm", "provider": "openai", "model": "gpt-4"},
-            {"type": "vector_store", "provider": "pinecone"},
-            {"type": "gateway", "provider": "internal"},
-        ],
-        "estimated_requests_per_month": 1_500_000,
-        "average_input_tokens": 4_000,
-        "average_output_tokens": 1_500,
+        "project_name": "Costly RAG Pipeline",
+        "llm": "gpt-4",
+        "embedding_model": "text-embedding-3-small",
+        "vector_db": "pinecone",
+        "framework": "FastAPI",
+        "memory": False,
+        "rag_enabled": True,
+        "cache_enabled": False,
+        "prompt_strategy": "zero-shot",
+        "monthly_requests": 1_500_000,
+        "average_prompt_tokens": 4_000,
+        "average_completion_tokens": 1_500,
+        "context_window": 128_000,
+        "concurrent_users": 10_000,
+        "observability": False,
+        "authentication": False,
+        "rate_limiting": False,
+        "retry_strategy": False,
     }

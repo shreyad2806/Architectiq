@@ -6,7 +6,7 @@ def test_review_success(client, sample_architecture_with_issues):
     assert response.status_code == 201
 
     data = response.json()
-    assert data["architecture_name"] == sample_architecture_with_issues["name"]
+    assert data["architecture_name"] == sample_architecture_with_issues["project_name"]
     assert isinstance(data["id"], str)
     assert isinstance(data["overall_score"], int)
     assert 0 <= data["overall_score"] <= 100
@@ -48,9 +48,9 @@ def test_review_empty_payload(client):
     assert response.status_code == 422
 
 
-def test_review_missing_name(client, sample_architecture):
+def test_review_missing_project_name(client, sample_architecture):
     payload = sample_architecture.copy()
-    del payload["name"]
+    del payload["project_name"]
     response = client.post("/api/v1/review", json=payload)
     assert response.status_code == 422
 
@@ -64,6 +64,6 @@ def test_review_invalid_component_type(client, sample_architecture):
 
 def test_review_negative_tokens(client, sample_architecture):
     payload = sample_architecture.copy()
-    payload["average_input_tokens"] = -100
+    payload["average_prompt_tokens"] = -100
     response = client.post("/api/v1/review", json=payload)
     assert response.status_code == 422

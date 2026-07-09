@@ -40,16 +40,16 @@ def test_estimate_empty_payload(client):
     assert response.status_code == 422
 
 
-def test_estimate_missing_components(client, sample_architecture):
+def test_estimate_missing_project_name(client, sample_architecture):
     payload = sample_architecture.copy()
-    del payload["components"]
+    del payload["project_name"]
     response = client.post("/api/v1/estimate", json=payload)
     assert response.status_code == 422
 
 
 def test_estimate_zero_traffic(client, sample_architecture):
     payload = sample_architecture.copy()
-    payload["estimated_requests_per_month"] = 0
+    payload["monthly_requests"] = 0
     response = client.post("/api/v1/estimate", json=payload)
     assert response.status_code == 200
     data = response.json()

@@ -37,9 +37,9 @@ def test_recommend_empty_payload(client):
     assert response.status_code == 422
 
 
-def test_recommend_missing_name(client, sample_architecture):
+def test_recommend_missing_project_name(client, sample_architecture):
     payload = sample_architecture.copy()
-    del payload["name"]
+    del payload["project_name"]
     response = client.post("/api/v1/recommend", json=payload)
     assert response.status_code == 422
 
