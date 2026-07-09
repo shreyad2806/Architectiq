@@ -9,6 +9,10 @@ from __future__ import annotations
 from app.schemas import ReviewRequest
 
 
+def _finding(severity: str, title: str, description: str, impact: str) -> dict:
+    return {"severity": severity, "title": title, "description": description, "impact": impact}
+
+
 # ---------------------------------------------------------------------------
 # Scoring tables
 # ---------------------------------------------------------------------------
@@ -107,11 +111,18 @@ class ScalabilityAnalyzer:
             ``expected_capacity`` (str), and ``recommendations`` (list[str]).
         """
         recommendations: list[str] = []
+        findings: list[dict] = []
         score = 0
 
         # 1. Concurrent users
         users_score = self._users_component(request.concurrent_users)
         score += users_score
+        if request.concurrent_users and request.concurrent_users >= 10_000:
+            findings.append(_finding(
+                "MEDIUM", "High Concurrent User Load",
+                f"{request.concurrent_users:,} concurrent users demands horizontal scaling, connection pooling, and async processing to maintain throughput.",
+                "Medium",
+            ))
 
         # 2. Caching
         if request.cache_enabled:
@@ -121,18 +132,40 @@ class ScalabilityAnalyzer:
                 "Enable semantic or response caching to reduce repeated LLM calls "
                 "and improve throughput under high concurrency."
             )
+            findings.append(_finding(
+                "HIGH", "No Caching Under High Traffic",
+                "Without caching, every request hits the LLM, creating a linear scaling bottleneck and risk of exceeding provider rate limits.",
+                "High",
+            ))
 
         # 3. Vector DB
         vdb_score, vdb_rec = self._vector_db_component(request.vector_db)
         score += vdb_score
         if vdb_rec:
             recommendations.append(vdb_rec)
+            if not request.vector_db:
+                findings.append(_finding(
+                    "MEDIUM", "No Vector Database",
+                    "Absence of a vector database limits the ability to scale semantic search horizontally for growing knowledge bases.",
+                    "Medium",
+                ))
+            else:
+                findings.append(_finding(
+                    "MEDIUM", "Suboptimal Vector Database",
+                    f"'{request.vector_db}' is not designed for high-throughput production workloads and may become a bottleneck.",
+                    "Medium",
+                ))
 
         # 4. Framework
         fw_score, fw_rec = self._framework_component(request.framework)
         score += fw_score
         if fw_rec:
             recommendations.append(fw_rec)
+            findings.append(_finding(
+                "MEDIUM", "Framework Scalability Bottleneck",
+                f"'{request.framework}' has limited async/concurrency support, which can become a throughput bottleneck under production load.",
+                "Medium",
+            ))
 
         # 5. Monthly traffic
         traffic_score = self._traffic_component(request.monthly_requests)
@@ -150,6 +183,7 @@ class ScalabilityAnalyzer:
             "scalability_score": score,
             "expected_capacity": _expected_capacity(score),
             "recommendations": recommendations,
+            "findings": findings,
         }
 
     # ------------------------------------------------------------------

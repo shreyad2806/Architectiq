@@ -9,6 +9,10 @@ from __future__ import annotations
 from app.schemas import ReviewRequest
 
 
+def _finding(severity: str, title: str, description: str, impact: str) -> dict:
+    return {"severity": severity, "title": title, "description": description, "impact": impact}
+
+
 # Cost per 1_000_000 tokens. Prices are approximate.
 PRICING_TABLE: dict[str, dict[str, float]] = {
     "gpt-4o": {
@@ -79,10 +83,60 @@ class CostAnalyzer:
             max(estimated_monthly_cost - baseline_cost, 0.0), 2
         )
 
+        findings: list[dict] = []
+
+        if pricing["input_per_1m"] >= 3.00 or pricing["output_per_1m"] >= 15.00:
+            findings.append(_finding(
+                "HIGH", "Very Expensive Model Selected",
+                f"'{request.llm}' has high per-token pricing (${pricing['input_per_1m']}/1M input, "
+                f"${pricing['output_per_1m']}/1M output). Consider a cheaper alternative.",
+                "High",
+            ))
+        elif pricing["input_per_1m"] >= 2.00 or pricing["output_per_1m"] >= 8.00:
+            findings.append(_finding(
+                "MEDIUM", "Moderately Expensive Model",
+                f"'{request.llm}' has moderate per-token pricing. Evaluate if a cheaper model meets quality requirements.",
+                "Medium",
+            ))
+
+        if request.average_prompt_tokens > 4_000:
+            findings.append(_finding(
+                "MEDIUM", "Large Prompt Size",
+                f"Average prompt of {request.average_prompt_tokens} tokens is high. Large prompts significantly increase cost per request.",
+                "Medium",
+            ))
+        elif request.average_prompt_tokens > 2_000:
+            findings.append(_finding(
+                "LOW", "Above-Average Prompt Size",
+                f"Average prompt of {request.average_prompt_tokens} tokens is above average. Consider prompt compression.",
+                "Low",
+            ))
+
+        if request.average_completion_tokens > 1_000:
+            findings.append(_finding(
+                "LOW", "Completion Tokens Above Average",
+                f"Average completion of {request.average_completion_tokens} tokens is high. Output tokens are typically 4–10x more expensive than input.",
+                "Low",
+            ))
+
+        if potential_monthly_savings >= 500:
+            findings.append(_finding(
+                "HIGH", "High Savings Potential",
+                f"Switching to a cheaper LLM could save ~${potential_monthly_savings:,.2f}/month. Evaluate model alternatives.",
+                "High",
+            ))
+        elif potential_monthly_savings >= 100:
+            findings.append(_finding(
+                "MEDIUM", "Moderate Savings Potential",
+                f"Switching to a cheaper LLM could save ~${potential_monthly_savings:,.2f}/month.",
+                "Medium",
+            ))
+
         return {
             "estimated_monthly_tokens": int(estimated_monthly_tokens),
             "estimated_monthly_cost": round(estimated_monthly_cost, 2),
             "potential_monthly_savings": potential_monthly_savings,
+            "findings": findings,
         }
 
     @staticmethod

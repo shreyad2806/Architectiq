@@ -11,40 +11,58 @@ from dataclasses import dataclass
 from app.schemas import ReviewRequest
 
 
+def _finding(severity: str, title: str, description: str, impact: str) -> dict:
+    return {"severity": severity, "title": title, "description": description, "impact": impact}
+
+
 @dataclass(frozen=True)
 class _Check:
     feature: str
     points: int
     finding: str
+    severity: str
+    title: str
+    description: str
+    impact: str
 
 
 # Each check contributes `points` when the feature is ABSENT (deduction model).
 # We start at 100 and subtract for each missing feature.
 CHECKS: list[_Check] = [
     _Check(
-        "retry_strategy",
-        25,
+        "retry_strategy", 25,
         "No retry strategy: transient LLM/network failures will surface directly to users.",
+        "HIGH", "Retry Strategy Missing",
+        "Without retries, any transient LLM or network error immediately returns a failure to the user, degrading reliability and user trust.",
+        "High",
     ),
     _Check(
-        "rate_limiting",
-        20,
+        "rate_limiting", 20,
         "No rate limiting: the service is vulnerable to traffic spikes and abuse.",
+        "HIGH", "No Rate Limiting",
+        "The absence of rate limiting allows runaway clients or attacks to exhaust LLM quotas and degrade service for all users.",
+        "High",
     ),
     _Check(
-        "authentication",
-        20,
+        "authentication", 20,
         "No authentication: API endpoints are publicly accessible without credentials.",
+        "HIGH", "No API Authentication",
+        "Unauthenticated endpoints can be freely abused, leading to cost overruns, data leaks, and compliance violations.",
+        "High",
     ),
     _Check(
-        "cache_enabled",
-        15,
+        "cache_enabled", 15,
         "No caching: every request hits the LLM, increasing cost and failure surface.",
+        "MEDIUM", "No Response Cache",
+        "Every request reaching the LLM increases the probability of hitting rate limits or provider downtime affecting all users.",
+        "Medium",
     ),
     _Check(
-        "memory",
-        10,
+        "memory", 10,
         "No session memory: stateless design may cause inconsistent multi-turn behaviour.",
+        "LOW", "No Session Memory",
+        "Without conversation memory the LLM cannot maintain context across turns, reducing coherence in multi-step interactions.",
+        "Low",
     ),
 ]
 
@@ -83,12 +101,16 @@ class ReliabilityAnalyzer:
         """
         score = 100
         findings: list[str] = []
+        structured_findings: list[dict] = []
 
         for check in CHECKS:
             value = getattr(request, check.feature, False)
             if not value:
                 score -= check.points
                 findings.append(check.finding)
+                structured_findings.append(_finding(
+                    check.severity, check.title, check.description, check.impact
+                ))
 
         score = max(score, 0)
 
@@ -96,4 +118,5 @@ class ReliabilityAnalyzer:
             "reliability_score": score,
             "risk_level": _risk_level(score),
             "findings": findings,
+            "structured_findings": structured_findings,
         }

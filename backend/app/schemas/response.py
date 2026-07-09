@@ -1,6 +1,83 @@
 from pydantic import BaseModel, Field
 
 
+class ExecutiveSummary(BaseModel):
+    """Structured executive summary produced for every architecture review."""
+
+    overall_assessment: str = Field(
+        ...,
+        description="High-level assessment label for the architecture.",
+        examples=["Good"],
+    )
+    summary: str = Field(
+        ...,
+        description="Concise narrative summary (≤120 words) written for an engineering manager or CTO.",
+        examples=["ArchitectIQ analyzed TalentLens and assigned an overall score of 82/100 (Good)."],
+    )
+    top_strengths: list[str] = Field(
+        default_factory=list,
+        description="Up to three concrete architectural strengths.",
+        examples=[["Production-grade async framework (FastAPI)", "Semantic caching is enabled"]],
+    )
+    top_risks: list[str] = Field(
+        default_factory=list,
+        description="Up to three highest-severity risk titles from the findings.",
+        examples=[["No Semantic Cache Detected", "Authentication Disabled"]],
+    )
+    estimated_monthly_saving: str = Field(
+        ...,
+        description="Human-readable estimated monthly cost saving from applying recommendations.",
+        examples=["$2,140"],
+    )
+    estimated_latency_improvement: str = Field(
+        ...,
+        description="Estimated response latency improvement as a percentage.",
+        examples=["43%"],
+    )
+    highest_priority_action: str = Field(
+        ...,
+        description="The single most impactful action to take immediately.",
+        examples=["Enable semantic caching. Repeated prompts waste tokens and inflate latency."],
+    )
+    production_readiness: str = Field(
+        ...,
+        description="Production readiness score expressed as a fraction.",
+        examples=["84/100"],
+    )
+
+    model_config = {
+        "json_schema_extra": {
+            "example": {
+                "overall_assessment": "Good",
+                "summary": (
+                    "ArchitectIQ analyzed TalentLens and assigned an overall architecture score of 82/100 (Good). "
+                    "The review identified 8 findings with 3 high-priority issues requiring immediate attention. "
+                    "The system is approaching production readiness (readiness score: 72/100). "
+                    "Applying the 12 recommendations could reduce monthly inference costs by approximately $2,140 "
+                    "and improve response latency by up to 43%."
+                ),
+                "top_strengths": [
+                    "Production-grade async framework (FastAPI)",
+                    "Retrieval-Augmented Generation pipeline is active",
+                    "Semantic caching is enabled, reducing cost and latency",
+                ],
+                "top_risks": [
+                    "Authentication Disabled",
+                    "Retry Strategy Missing",
+                    "No Structured Logging",
+                ],
+                "estimated_monthly_saving": "$2,140",
+                "estimated_latency_improvement": "43%",
+                "highest_priority_action": (
+                    "Enforce API Authentication (OAuth 2.0 / JWT). "
+                    "Unauthenticated endpoints are accessible to anyone on the internet."
+                ),
+                "production_readiness": "72/100",
+            }
+        }
+    }
+
+
 class RecommendationResponse(BaseModel):
     """A single optimization recommendation for an architecture review."""
 
@@ -131,6 +208,10 @@ class EstimateResponse(BaseModel):
 class ReviewResponse(BaseModel):
     """Complete architecture review result returned by the analyzer."""
 
+    executive_summary: ExecutiveSummary | None = Field(
+        default=None,
+        description="Structured executive summary for engineering managers and CTOs.",
+    )
     id: str = Field(
         ...,
         description="Unique identifier for the review.",

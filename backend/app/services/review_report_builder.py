@@ -19,7 +19,10 @@ from app.services.rag_analyzer import RagAnalyzer
 from app.services.reliability_analyzer import ReliabilityAnalyzer
 from app.services.scalability_analyzer import ScalabilityAnalyzer
 from app.services.security_analyzer import SecurityAnalyzer
-from app.services.recommendation_engine import RecommendationEngine
+from app.services.recommendation_engine import AdvancedRecommendationEngine, RecommendationEngine
+from app.services.executive_summary_generator import ExecutiveSummaryGenerator
+from app.services.intelligence_layer import IntelligenceLayer
+from app.services.report_generator import ReportGenerator
 
 
 # ---------------------------------------------------------------------------
@@ -40,45 +43,6 @@ def _severity(score: int) -> str:
     return "CRITICAL"
 
 
-def _executive_summary(
-    project_name: str,
-    overall_score: int,
-    grade: str,
-    top_findings: list[dict],
-    recommendations: list[dict],
-) -> str:
-    high_recs = [r for r in recommendations if r["priority"] == "HIGH"]
-    n_findings = len(top_findings)
-    n_high = len(high_recs)
-
-    severity_label = "excellent" if overall_score >= 85 else (
-        "good" if overall_score >= 70 else (
-            "fair" if overall_score >= 50 else "poor"
-        )
-    )
-
-    parts = [
-        f"{project_name} received an overall architecture score of {overall_score}/100 (grade: {grade}), "
-        f"indicating {severity_label} production readiness."
-    ]
-
-    if n_findings:
-        parts.append(
-            f"The review surfaced {n_findings} finding{'s' if n_findings != 1 else ''} "
-            f"across security, reliability, observability, and RAG quality dimensions."
-        )
-
-    if n_high:
-        parts.append(
-            f"There {'are' if n_high > 1 else 'is'} {n_high} high-priority recommendation{'s' if n_high != 1 else ''} "
-            "that should be addressed before production deployment."
-        )
-    else:
-        parts.append("No high-priority issues were identified.")
-
-    return " ".join(parts)
-
-
 # ---------------------------------------------------------------------------
 # Builder
 # ---------------------------------------------------------------------------
@@ -96,7 +60,11 @@ class ReviewReportBuilder:
         self._reliability  = ReliabilityAnalyzer()
         self._scalability  = ScalabilityAnalyzer()
         self._security     = SecurityAnalyzer()
-        self._recs         = RecommendationEngine()
+        self._recs             = RecommendationEngine()
+        self._advanced_recs    = AdvancedRecommendationEngine()
+        self._exec_summary     = ExecutiveSummaryGenerator()
+        self._intelligence     = IntelligenceLayer()
+        self._report_generator = ReportGenerator()
 
     def build(self, request: ReviewRequest) -> dict:
         """Return a complete architecture audit report.
@@ -117,35 +85,49 @@ class ReviewReportBuilder:
         scalability_result  = self._scalability.analyze(request)
         security_result     = self._security.analyze(request)
         observability_result = self._observability.analyze(request)
-        recommendations     = self._recs.generate(request)
+        recommendations        = self._recs.generate(request)
+        advanced_rec_report    = self._advanced_recs.generate(request)
 
-        # ── Top findings: collect all critical/warning signals ─────────────
+        # ── Top findings: structured objects from every analyzer ──────────
+        _order = {"HIGH": 0, "MEDIUM": 1, "LOW": 2}
         top_findings: list[dict] = []
 
-        for finding in security_result["security_findings"]:
-            top_findings.append({"dimension": "Security", "severity": "HIGH", "detail": finding})
+        def _add(dimension: str, findings: list[dict]) -> None:
+            for f in findings:
+                top_findings.append({
+                    "dimension": dimension,
+                    "severity":  f["severity"],
+                    "title":     f["title"],
+                    "description": f["description"],
+                    "impact":    f["impact"],
+                })
 
-        for finding in reliability_result["findings"]:
-            top_findings.append({"dimension": "Reliability", "severity": "HIGH", "detail": finding})
+        _add("Security",            security_result["findings"])
+        _add("Reliability",         reliability_result["structured_findings"])
+        _add("Production Readiness", production_result["findings"])
+        _add("Observability",       observability_result["findings"])
+        _add("Scalability",         scalability_result["findings"])
+        _add("RAG Quality",         rag_result["findings"])
+        _add("Cost",                cost_result["findings"])
+        _add("Latency",             latency_result["findings"])
 
-        for missing in production_result["missing_features"]:
-            top_findings.append({"dimension": "Production Readiness", "severity": "MEDIUM", "detail": missing})
-
-        for missing in observability_result["missing_features"]:
-            top_findings.append({"dimension": "Observability", "severity": "MEDIUM", "detail": missing})
-
-        for rec in rag_result["recommendations"]:
-            top_findings.append({"dimension": "RAG Quality", "severity": "LOW", "detail": rec})
-
-        for rec in scalability_result["recommendations"]:
-            top_findings.append({"dimension": "Scalability", "severity": "LOW", "detail": rec})
-
-        # Sort: HIGH first, then MEDIUM, then LOW
-        _order = {"HIGH": 0, "MEDIUM": 1, "LOW": 2}
         top_findings.sort(key=lambda f: _order.get(f["severity"], 99))
+
+        # ── Intelligence Summary ───────────────────────────────────────────
+        intelligence_summary = self._intelligence.generate(
+            overall_score=scoring_result["overall_score"],
+            production_score=production_result["score"],
+            top_findings=top_findings,
+            recommendations=recommendations,
+            cost_result=cost_result,
+            advanced_rec_report=advanced_rec_report,
+        )
 
         # ── Assemble report ────────────────────────────────────────────────
         report = {
+            # ── Intelligence Summary (top-level) ──────────────────────────
+            "intelligence_summary": intelligence_summary,
+
             "report_id": f"report-{uuid.uuid4().hex[:8]}",
             "generated_at": datetime.now(timezone.utc).isoformat(),
             "project_name": request.project_name,
@@ -220,14 +202,30 @@ class ReviewReportBuilder:
             # ── Prioritised Recommendations ────────────────────────────────
             "recommendations": recommendations,
 
+            # ── Rich Recommendations (advanced engine, for roadmap) ─────────
+            "rich_recommendations": advanced_rec_report["recommendations"],
+
             # ── Executive Summary ──────────────────────────────────────────
-            "executive_summary": _executive_summary(
-                project_name=request.project_name,
+            "executive_summary": self._exec_summary.generate(
+                request=request,
                 overall_score=scoring_result["overall_score"],
+                production_score=production_result["score"],
                 grade=scoring_result["grade"],
                 top_findings=top_findings,
                 recommendations=recommendations,
+                analyzer_results={
+                    "rag":           rag_result,
+                    "security":      security_result,
+                    "reliability":   reliability_result,
+                    "scalability":   scalability_result,
+                    "observability": observability_result,
+                    "cost":          cost_result,
+                    "latency":       latency_result,
+                },
+                advanced_rec_report=advanced_rec_report,
             ),
         }
+
+        report["audit_report"] = self._report_generator.generate(report)
 
         return report

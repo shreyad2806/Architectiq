@@ -12,6 +12,10 @@ from dataclasses import dataclass
 from app.schemas import ReviewRequest
 
 
+def _finding(severity: str, title: str, description: str, impact: str) -> dict:
+    return {"severity": severity, "title": title, "description": description, "impact": impact}
+
+
 # ---------------------------------------------------------------------------
 # Scoring tables
 # ---------------------------------------------------------------------------
@@ -103,6 +107,7 @@ class RagAnalyzer:
             ``retrieval_quality`` (str), and ``recommendations`` (list[str]).
         """
         recommendations: list[str] = []
+        findings: list[dict] = []
         score = 0
 
         # 1. RAG enabled baseline
@@ -112,24 +117,51 @@ class RagAnalyzer:
             recommendations.append(
                 "Enable RAG to ground responses in your knowledge base and reduce hallucinations."
             )
+            findings.append(_finding(
+                "HIGH", "RAG Pipeline Disabled",
+                "Retrieval-Augmented Generation is not enabled. Without RAG the LLM relies solely on training data, increasing hallucination risk for domain-specific queries.",
+                "High",
+            ))
 
         # 2. Embedding model
         embedding_score, emb_rec = self._embedding_component(request.embedding_model)
         score += embedding_score
         if emb_rec:
             recommendations.append(emb_rec)
+            findings.append(_finding(
+                "MEDIUM", "Weak Embedding Model",
+                f"The embedding model '{request.embedding_model}' is lower-tier and may produce less accurate similarity matches, reducing retrieval quality.",
+                "Medium",
+            ))
 
         # 3. Vector database
         vdb_score, vdb_rec = self._vector_db_component(request.vector_db)
         score += vdb_score
         if vdb_rec:
             recommendations.append(vdb_rec)
+            if not request.vector_db:
+                findings.append(_finding(
+                    "HIGH", "No Vector Database Configured",
+                    "Without a vector store there is no semantic retrieval capability. RAG requires a vector database to index and query embeddings.",
+                    "High",
+                ))
+            else:
+                findings.append(_finding(
+                    "MEDIUM", "Basic Vector Store in Use",
+                    f"'{request.vector_db}' is not optimised for production-scale ANN queries. This may become a bottleneck under high retrieval load.",
+                    "Medium",
+                ))
 
         # 4. Context window
         ctx_score, ctx_rec = self._context_component(request.context_window)
         score += ctx_score
         if ctx_rec:
             recommendations.append(ctx_rec)
+            findings.append(_finding(
+                "MEDIUM", "Small Context Window Limits Retrieval",
+                "A small context window restricts how many chunks can be retrieved and included per request, limiting answer completeness.",
+                "Medium",
+            ))
 
         # 5. Caching
         if request.cache_enabled:
@@ -138,6 +170,11 @@ class RagAnalyzer:
             recommendations.append(
                 "Enable semantic caching to reduce redundant retrieval calls and lower latency."
             )
+            findings.append(_finding(
+                "LOW", "No Retrieval Cache",
+                "Repeated similar queries trigger full vector DB lookups every time. Semantic caching would reduce latency and retrieval costs.",
+                "Low",
+            ))
 
         score = min(score, 100)
 
@@ -145,6 +182,7 @@ class RagAnalyzer:
             "rag_score": score,
             "retrieval_quality": _retrieval_quality(score),
             "recommendations": recommendations,
+            "findings": findings,
         }
 
     # ------------------------------------------------------------------

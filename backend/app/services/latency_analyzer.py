@@ -9,6 +9,10 @@ from __future__ import annotations
 from app.schemas import ReviewRequest
 
 
+def _finding(severity: str, title: str, description: str, impact: str) -> dict:
+    return {"severity": severity, "title": title, "description": description, "impact": impact}
+
+
 # Base latency (ms) per LLM. Falls back to DEFAULT_BASE_LATENCY.
 LLM_BASE_LATENCY_MS: dict[str, float] = {
     "gpt-4o": 350.0,
@@ -71,9 +75,55 @@ class LatencyAnalyzer:
         latency -= self._cache_saving(request)
 
         estimated = round(max(latency, 0.0), 2)
+
+        findings: list[dict] = []
+
+        if request.context_window and request.context_window > LARGE_CONTEXT_THRESHOLD:
+            findings.append(_finding(
+                "HIGH", "Large Context Window",
+                f"Context window of {request.context_window:,} tokens adds {LARGE_CONTEXT_PENALTY_MS:.0f} ms to every request. "
+                "Reduce context size or summarise retrieved chunks where possible.",
+                "High",
+            ))
+
+        if not request.cache_enabled:
+            findings.append(_finding(
+                "HIGH", "No Semantic Cache Detected",
+                "Every request hits the LLM directly. Enabling semantic caching can reduce latency by "
+                f"up to {CACHE_SAVING_MS:.0f} ms for repeated or similar queries.",
+                "High",
+            ))
+
+        if request.vector_db:
+            findings.append(_finding(
+                "MEDIUM", "Vector Database Retrieval Overhead",
+                f"Vector DB lookup adds ~{VECTOR_DB_LATENCY_MS:.0f} ms per request. "
+                "Use approximate nearest-neighbour indices and connection pooling to minimise this.",
+                "Medium",
+            ))
+
+        if request.rag_enabled:
+            findings.append(_finding(
+                "MEDIUM", "RAG Pipeline Overhead",
+                f"RAG retrieval and reranking adds ~{RAG_OVERHEAD_MS:.0f} ms. "
+                "Consider async pre-fetching or caching retrieved chunks for hot queries.",
+                "Medium",
+            ))
+
+        if request.concurrent_users and request.concurrent_users > CONCURRENCY_THRESHOLD:
+            excess = request.concurrent_users - CONCURRENCY_THRESHOLD
+            penalty = round((excess / 1_000) * CONCURRENCY_PENALTY_PER_1K_MS, 1)
+            findings.append(_finding(
+                "LOW", "Moderate-to-High Concurrency",
+                f"{request.concurrent_users:,} concurrent users adds ~{penalty} ms of queuing latency. "
+                "Use horizontal scaling and async workers to handle load.",
+                "Low",
+            ))
+
         return {
             "estimated_latency_ms": estimated,
             "latency_rating": self._rating(estimated),
+            "findings": findings,
         }
 
     # ------------------------------------------------------------------
