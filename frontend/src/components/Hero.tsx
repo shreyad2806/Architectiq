@@ -31,13 +31,15 @@ export default function Hero() {
           {/* CTAs */}
           <div className="mt-9 flex flex-wrap items-center gap-3">
             <a
-              href="#analyze"
+              href="/review"
               className="rounded-lg bg-[#6d5ce7] px-5 py-2.5 text-[13px] font-medium text-white transition-colors hover:bg-[#5b4bd5]"
             >
               Analyze Architecture
             </a>
             <a
-              href="#docs"
+              href="http://localhost:8000/docs"
+              target="_blank"
+              rel="noopener noreferrer"
               className="rounded-lg border border-white/10 bg-white/[0.03] px-5 py-2.5 text-[13px] font-medium text-slate-200 transition-colors hover:bg-white/[0.07]"
             >
               View API Docs
