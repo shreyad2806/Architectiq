@@ -1,4 +1,8 @@
-from fastapi import FastAPI
+import traceback
+
+from fastapi import FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from app.api.health import router as health_router
 from app.api.review import router as review_router
 from app.api.estimate import router as estimate_router
@@ -42,10 +46,47 @@ and generates optimization recommendations.
     ]
 )
 
+# ---------------------------------------------------------------------------
+# CORS
+# ---------------------------------------------------------------------------
+
+_ALLOWED_ORIGINS = [
+    "http://localhost:5173",   # Vite / React dev server
+    "http://localhost:3000",   # CRA / alternative dev server
+    # "https://architectiq.example.com",  # TODO: replace with deployed frontend URL
+]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=_ALLOWED_ORIGINS,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 app.include_router(health_router)
 app.include_router(review_router, prefix="/api/v1")
 app.include_router(estimate_router, prefix="/api/v1")
 app.include_router(recommend_router, prefix="/api/v1")
+
+
+# ---------------------------------------------------------------------------
+# Global exception handler
+# ---------------------------------------------------------------------------
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+    logger.error(
+        f"Unhandled exception on {request.method} {request.url.path}: "
+        f"{type(exc).__name__}: {exc}\n{traceback.format_exc()}"
+    )
+    return JSONResponse(
+        status_code=500,
+        content={
+            "error": "Internal Server Error",
+            "message": "Unexpected error occurred.",
+        },
+    )
 
 
 @app.on_event("startup")
