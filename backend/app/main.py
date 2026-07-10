@@ -1,8 +1,10 @@
 import traceback
 
-from fastapi import FastAPI, Request
+from pathlib import Path
+
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from app.api.health import router as health_router
 from app.api.review import router as review_router
 from app.api.estimate import router as estimate_router
@@ -71,6 +73,21 @@ app.include_router(recommend_router, prefix="/api/v1")
 
 
 # ---------------------------------------------------------------------------
+# /skill.md — served from backend/SKILL.md
+# ---------------------------------------------------------------------------
+
+_SKILL_MD = Path(__file__).resolve().parent.parent / "SKILL.md"
+
+
+@app.get("/skill.md", include_in_schema=False)
+async def skill_md() -> FileResponse:
+    logger.info(f"Resolved SKILL.md path: {_SKILL_MD}")
+    logger.info(f"SKILL.md exists: {_SKILL_MD.exists()}")
+    if not _SKILL_MD.exists():
+        raise HTTPException(status_code=404, detail="SKILL.md not found")
+    return FileResponse(_SKILL_MD, media_type="text/markdown")
+
+# ---------------------------------------------------------------------------
 # Global exception handler
 # ---------------------------------------------------------------------------
 
@@ -93,11 +110,3 @@ async def global_exception_handler(request: Request, exc: Exception) -> JSONResp
 def startup_event():
     logger.info("ArchitectIQ API starting up...")
     logger.info("Application initialized successfully")
-
-@app.get("/skill.md", include_in_schema=False)
-async def skill_md():
-    return FileResponse(
-        path="SKILL.md",
-        media_type="text/markdown",
-        filename="SKILL.md"
-    )
