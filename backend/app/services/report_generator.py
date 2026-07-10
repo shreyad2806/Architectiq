@@ -100,40 +100,17 @@ def _phase_for(rec: dict) -> int:
     return 2
 
 
-def _build_optimization_roadmap(recommendations: list[dict]) -> list[dict]:
-    """Convert recommendations into a three-phase implementation roadmap.
+def _build_optimization_roadmap(raw_report: dict) -> list[dict]:
+    """Return the dynamic roadmap pre-built by RoadmapGenerator.
 
-    Classification rules:
-        Phase 1 — Easy + HIGH/MEDIUM priority + implementable today (< 1 day)
-        Phase 2 — Medium effort, infrastructure improvements, ~1 week
-        Phase 3 — Advanced optimisations, long-term, architectural changes
+    RoadmapGenerator (called by ReviewReportBuilder before ReportGenerator)
+    stores the result in raw_report["dynamic_roadmap"].  We return it
+    directly so no re-classification work happens here.
 
-    Each phase entry:
-        phase       int
-        title       str
-        timeline    str
-        tasks       list[str]  — recommendation titles
+    Falls back to an empty list when the key is absent (e.g. in unit tests
+    that construct a raw_report without running the full builder pipeline).
     """
-    buckets: dict[int, list[str]] = {1: [], 2: [], 3: []}
-
-    for rec in recommendations:
-        phase = _phase_for(rec)
-        title = (rec.get("title") or "").strip()
-        if title:
-            buckets[phase].append(title)
-
-    result: list[dict] = []
-    for meta in _PHASES:
-        tasks = buckets[meta["phase"]]
-        if tasks:  # omit empty phases
-            result.append({
-                "phase":    meta["phase"],
-                "title":    meta["title"],
-                "timeline": meta["timeline"],
-                "tasks":    tasks,
-            })
-
-    return result
+    return raw_report.get("dynamic_roadmap") or []
 
 
 # ---------------------------------------------------------------------------
@@ -142,15 +119,30 @@ def _build_optimization_roadmap(recommendations: list[dict]) -> list[dict]:
 
 def _build_architecture_overview(raw_report: dict) -> dict:
     arch_score = raw_report.get("architecture_score", {})
-    pr = raw_report.get("production_readiness", {})
+    pr         = raw_report.get("production_readiness", {})
+    health     = raw_report.get("architecture_health", {})
 
     overall_score    = arch_score.get("overall_score", 0)
     production_score = pr.get("score", 0)
+
+    score_breakdown: dict = {}
+    if health:
+        score_breakdown = {
+            "cost_efficiency":          health.get("cost_efficiency", 0),
+            "latency":                  health.get("latency", 0),
+            "reliability":              health.get("reliability", 0),
+            "scalability":              health.get("scalability", 0),
+            "cost_efficiency_insight":  health.get("cost_efficiency_insight", ""),
+            "latency_insight":          health.get("latency_insight", ""),
+            "reliability_insight":      health.get("reliability_insight", ""),
+            "scalability_insight":      health.get("scalability_insight", ""),
+        }
 
     return {
         "overall_score":        overall_score,
         "architecture_grade":   _letter_grade(overall_score),
         "production_readiness": production_score,
+        "score_breakdown":      score_breakdown,
     }
 
 
@@ -175,15 +167,47 @@ def _build_score_breakdown(raw_report: dict) -> dict:
 # Cost Analysis reshaper
 # ---------------------------------------------------------------------------
 
+def _fmt_cost(value: float) -> str:
+    """Format a float dollar value as a human-readable string."""
+    if value >= 1_000:
+        return f"${value:,.0f}"
+    if value > 0:
+        return f"${value:.2f}"
+    return "$0"
+
+
+def _savings_pct(total: float, savings: float) -> str:
+    if total <= 0:
+        return "0%"
+    return f"{min(round((savings / total) * 100), 99)}%"
+
+
 def _build_cost_analysis(raw_report: dict) -> dict:
-    ca = raw_report.get("cost_analysis", {})
+    ca    = raw_report.get("cost_analysis", {})
     intel = raw_report.get("intelligence_summary", {})
+    bd    = ca.get("breakdown", {})
+
+    gross   = bd.get("total_before_savings", ca.get("estimated_monthly_cost", 0.0))
+    savings = bd.get("estimated_savings", ca.get("potential_monthly_savings", 0.0))
+    net     = bd.get("monthly_cost", gross)
+
     return {
-        "estimated_monthly_tokens":  ca.get("estimated_monthly_tokens", 0),
-        "estimated_monthly_cost":    ca.get("estimated_monthly_cost", 0.0),
-        "potential_monthly_savings": ca.get("potential_monthly_savings", 0.0),
+        "estimated_monthly_tokens":   ca.get("estimated_monthly_tokens", 0),
+        "estimated_monthly_cost":     _fmt_cost(net),
+        "potential_monthly_savings":  _fmt_cost(savings),
+        "savings_percentage":         _savings_pct(gross, savings),
         "estimated_saving_from_recs": intel.get("estimated_monthly_savings", "$0"),
-        "currency": ca.get("currency", "USD"),
+        "currency":                   ca.get("currency", "USD"),
+        "breakdown": {
+            "monthly_cost":         round(net, 2),
+            "llm_cost":             round(bd.get("llm_cost", 0.0), 2),
+            "embedding_cost":       round(bd.get("embedding_cost", 0.0), 2),
+            "vector_db_cost":       round(bd.get("vector_db_cost", 0.0), 2),
+            "storage_cost":         round(bd.get("storage_cost", 0.0), 2),
+            "infrastructure_cost":  round(bd.get("infrastructure_cost", 0.0), 2),
+            "total_before_savings": round(gross, 2),
+            "estimated_savings":    round(savings, 2),
+        } if bd else {},
     }
 
 
@@ -287,6 +311,9 @@ class ReportGenerator:
             "reliability_analysis":   _build_reliability_analysis(raw_report),
             "scalability_analysis":   _build_scalability_analysis(raw_report),
             "observability_analysis": _build_observability_analysis(raw_report),
-            "recommendations":        raw_recs,
-            "optimization_roadmap":   _build_optimization_roadmap(adv_recs),
+            # Use rich recommendations (adv_recs) so the frontend receives the
+            # correct field names: priority, title, reason, expected_monthly_saving,
+            # latency_improvement, difficulty, implementation_time.
+            "recommendations":        adv_recs,
+            "optimization_roadmap":   _build_optimization_roadmap(raw_report),
         }

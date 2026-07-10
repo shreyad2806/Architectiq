@@ -13,6 +13,7 @@ Public API (backward-compatible):
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 
 from app.schemas import ReviewRequest
@@ -31,8 +32,40 @@ from app.services.security_analyzer import SecurityAnalyzer
 # ---------------------------------------------------------------------------
 _PRIORITY_ORDER = {"HIGH": 0, "MEDIUM": 1, "LOW": 2}
 
+# Difficulty ordering: Easy first, Hard last
+_DIFFICULTY_ORDER = {"easy": 0, "medium": 1, "hard": 2}
+
+
+def _impl_time_minutes(impl_time: str) -> int:
+    """Normalise a human-readable implementation_time string to minutes.
+
+    Examples:
+        "15 minutes" → 15
+        "30 min"     → 30
+        "2 hours"    → 120
+        "1 day"      → 480
+        "3 days"     → 1440
+        "1 week"     → 2400
+        "2 weeks"    → 4800
+        "varies"     → 9999  (unknown, sort last)
+    """
+    t = impl_time.lower().strip()
+    if not t or t == "varies":
+        return 9_999
+    m = re.search(r"(\d+(?:\.\d+)?)", t)
+    value = float(m.group(1)) if m else 1.0
+    if "week" in t:
+        return int(value * 2_400)
+    if "day" in t:
+        return int(value * 480)
+    if "hour" in t or " hr" in t:
+        return int(value * 60)
+    if "min" in t:
+        return int(value)
+    return 9_999
+
 # Models known to be cheaper than gpt-4o and suitable as drop-in alternatives
-_CHEAP_MODELS = {"gpt-4o-mini", "llama3", "gemini-2.5-pro"}
+_CHEAP_MODELS = {"gpt-4o-mini", "llama3", "gemini-2.5-flash"}
 _HIGH_QUALITY_EMBEDDINGS = {"text-embedding-3-large", "bge-large", "bge-m3", "e5-large"}
 _PRODUCTION_VDB = {"pinecone", "weaviate", "qdrant", "milvus"}
 
@@ -56,19 +89,43 @@ class Recommendation:
     estimated_monthly_saving: float = 0.0
     estimated_latency_improvement: float = 0.0
     estimated_score_improvement: int = 0
+    # Impact metadata — used by frontend when savings/latency are both zero
+    primary_benefit: str = ""                # e.g. "Security", "Reliability", "Cost"
+    secondary_benefit: str = ""              # e.g. "Reliability", "Performance"
+    impact_level: str = ""                   # HIGH | MEDIUM | LOW (mirrors priority by default)
 
     def to_rich_dict(self) -> dict:
         return {
-            "priority": self.priority,
-            "category": self.category,
-            "title": self.title,
-            "reason": self.reason,
+            "priority":               self.priority,
+            "category":               self.category,
+            "title":                  self.title,
+            "reason":                 self.reason,
+            "impact":                 self._impact(),
             "expected_monthly_saving": self.expected_monthly_saving,
-            "latency_improvement": self.latency_improvement,
-            "quality_improvement": self.quality_improvement,
-            "difficulty": self.difficulty,
-            "implementation_time": self.implementation_time,
+            "latency_improvement":    self.latency_improvement,
+            "quality_improvement":    self.quality_improvement,
+            "difficulty":             self.difficulty,
+            "implementation_time":    self.implementation_time,
+            "primary_benefit":        self.primary_benefit or _default_benefit(self.category),
+            "secondary_benefit":      self.secondary_benefit,
+            "impact_level":           self.impact_level or self.priority,
         }
+
+    def _impact(self) -> str:
+        """Derive a human-readable impact label from priority + savings + latency."""
+        if self.priority == "HIGH" and self.estimated_monthly_saving >= 500:
+            return "Critical — high cost & reliability risk"
+        if self.priority == "HIGH" and self.estimated_latency_improvement >= 80:
+            return "Critical — severe latency impact"
+        if self.priority == "HIGH":
+            return "High — must fix before production"
+        if self.priority == "MEDIUM" and self.estimated_monthly_saving >= 200:
+            return "Medium — significant cost savings available"
+        if self.priority == "MEDIUM" and self.estimated_latency_improvement >= 40:
+            return "Medium — measurable latency improvement"
+        if self.priority == "MEDIUM":
+            return "Medium — improves quality or resilience"
+        return "Low — nice-to-have optimisation"
 
     def to_dict(self) -> dict:
         """Legacy shape used by RecommendationEngine.generate()."""
@@ -108,6 +165,24 @@ def _monthly_cost_for_model(model: str, request: ReviewRequest) -> float:
     output_tokens = request.monthly_requests * request.average_completion_tokens
     return (input_tokens / 1_000_000) * pricing["input_per_1m"] + \
            (output_tokens / 1_000_000) * pricing["output_per_1m"]
+
+
+# ---------------------------------------------------------------------------
+# Benefit mapping helpers
+# ---------------------------------------------------------------------------
+
+_CATEGORY_BENEFIT: dict[str, str] = {
+    "Cost Optimization": "Cost",
+    "Performance":       "Performance",
+    "RAG Optimization":  "Quality",
+    "Reliability":       "Reliability",
+    "Security":          "Security",
+    "Observability":     "Observability",
+}
+
+
+def _default_benefit(category: str) -> str:
+    return _CATEGORY_BENEFIT.get(category, category)
 
 
 # ---------------------------------------------------------------------------
@@ -363,6 +438,9 @@ def _rules(request: ReviewRequest, cost: dict, latency: dict) -> list[Recommenda
             difficulty="Easy",
             implementation_time="1 hour",
             estimated_score_improvement=8,
+            primary_benefit="Reliability",
+            secondary_benefit="Stability",
+            impact_level="HIGH",
         ))
 
     # Rule: always recommend circuit breaker for production
@@ -376,6 +454,9 @@ def _rules(request: ReviewRequest, cost: dict, latency: dict) -> list[Recommenda
             difficulty="Medium",
             implementation_time="2 hours",
             estimated_score_improvement=4,
+            primary_benefit="Reliability",
+            secondary_benefit="Availability",
+            impact_level="MEDIUM",
         ))
 
     # Rule: no cache → fallback model harder
@@ -389,6 +470,9 @@ def _rules(request: ReviewRequest, cost: dict, latency: dict) -> list[Recommenda
             difficulty="Medium",
             implementation_time="3 hours",
             estimated_score_improvement=5,
+            primary_benefit="Reliability",
+            secondary_benefit="Availability",
+            impact_level="MEDIUM",
         ))
 
     # ── SECURITY ─────────────────────────────────────────────────────────────
@@ -403,6 +487,9 @@ def _rules(request: ReviewRequest, cost: dict, latency: dict) -> list[Recommenda
             difficulty="Easy",
             implementation_time="2 hours",
             estimated_score_improvement=10,
+            primary_benefit="Security",
+            secondary_benefit="Compliance",
+            impact_level="HIGH",
         ))
 
     if not request.rate_limiting:
@@ -415,6 +502,9 @@ def _rules(request: ReviewRequest, cost: dict, latency: dict) -> list[Recommenda
             difficulty="Easy",
             implementation_time="1 hour",
             estimated_score_improvement=6,
+            primary_benefit="Security",
+            secondary_benefit="Reliability",
+            impact_level="HIGH",
         ))
 
     if not request.prompt_injection_protection:
@@ -427,6 +517,9 @@ def _rules(request: ReviewRequest, cost: dict, latency: dict) -> list[Recommenda
             difficulty="Medium",
             implementation_time="4 hours",
             estimated_score_improvement=8,
+            primary_benefit="Security",
+            secondary_benefit="Reliability",
+            impact_level="HIGH",
         ))
 
     if not request.input_validation:
@@ -439,6 +532,9 @@ def _rules(request: ReviewRequest, cost: dict, latency: dict) -> list[Recommenda
             difficulty="Easy",
             implementation_time="30 minutes",
             estimated_score_improvement=5,
+            primary_benefit="Security",
+            secondary_benefit="Reliability",
+            impact_level="MEDIUM",
         ))
 
     # ── OBSERVABILITY ────────────────────────────────────────────────────────
@@ -453,6 +549,9 @@ def _rules(request: ReviewRequest, cost: dict, latency: dict) -> list[Recommenda
             difficulty="Easy",
             implementation_time="2 hours",
             estimated_score_improvement=6,
+            primary_benefit="Observability",
+            secondary_benefit="Debuggability",
+            impact_level="HIGH",
         ))
 
     if not request.monitoring:
@@ -465,6 +564,9 @@ def _rules(request: ReviewRequest, cost: dict, latency: dict) -> list[Recommenda
             difficulty="Medium",
             implementation_time="4 hours",
             estimated_score_improvement=5,
+            primary_benefit="Observability",
+            secondary_benefit="Reliability",
+            impact_level="HIGH",
         ))
 
     if not request.tracing:
@@ -474,10 +576,13 @@ def _rules(request: ReviewRequest, cost: dict, latency: dict) -> list[Recommenda
             title="Add Distributed Tracing with OpenTelemetry",
             reason="Multi-step pipelines (API → retrieval → LLM → response) need distributed tracing to isolate "
                    "latency contributors. Instrument with OpenTelemetry and export to Langfuse or Jaeger.",
-            latency_improvement="visibility only",
+            latency_improvement="0%",
             difficulty="Medium",
             implementation_time="3 hours",
             estimated_score_improvement=4,
+            primary_benefit="Observability",
+            secondary_benefit="Performance",
+            impact_level="MEDIUM",
         ))
 
     if not request.metrics:
@@ -490,6 +595,9 @@ def _rules(request: ReviewRequest, cost: dict, latency: dict) -> list[Recommenda
             difficulty="Easy",
             implementation_time="2 hours",
             estimated_score_improvement=3,
+            primary_benefit="Observability",
+            secondary_benefit="Cost",
+            impact_level="MEDIUM",
         ))
 
     if not request.health_endpoint:
@@ -502,6 +610,9 @@ def _rules(request: ReviewRequest, cost: dict, latency: dict) -> list[Recommenda
             difficulty="Easy",
             implementation_time="15 minutes",
             estimated_score_improvement=2,
+            primary_benefit="Reliability",
+            secondary_benefit="Observability",
+            impact_level="LOW",
         ))
 
     return recs
@@ -512,11 +623,20 @@ def _rules(request: ReviewRequest, cost: dict, latency: dict) -> list[Recommenda
 # ---------------------------------------------------------------------------
 
 def _sort_recs(recs: list[Recommendation]) -> list[Recommendation]:
+    """Rank recommendations using a five-level composite sort key.
+
+    1. Priority           HIGH(0) < MEDIUM(1) < LOW(2)
+    2. Estimated savings  descending (highest first)
+    3. Latency improvement descending (highest first)
+    4. Difficulty         Easy(0) < Medium(1) < Hard(2)
+    5. Implementation time ascending (fastest to complete first, in minutes)
+    """
     return sorted(recs, key=lambda r: (
         _PRIORITY_ORDER.get(r.priority, 99),
         -r.estimated_monthly_saving,
         -r.estimated_latency_improvement,
-        r.difficulty,
+        _DIFFICULTY_ORDER.get(r.difficulty.lower().strip(), 1),
+        _impl_time_minutes(r.implementation_time),
     ))
 
 
@@ -612,13 +732,95 @@ class AdvancedRecommendationEngine:
         }
 
 
+# ---------------------------------------------------------------------------
+# Semantic deduplication
+# ---------------------------------------------------------------------------
+
+# Canonical keys that identify the same underlying optimisation even when the
+# recommendation title includes dynamic content (e.g. model names, numbers).
+_SEMANTIC_KEYS: list[tuple[str, ...]] = [
+    # cache
+    ("semantic cach", "response cache", "redis"),
+    # model switch / routing
+    ("gpt-4o mini", "switch from", "model routing", "intelligent routing"),
+    # retry / backoff
+    ("retry", "backoff"),
+    # authentication
+    ("authentication", "oauth", "jwt"),
+    # rate limiting
+    ("rate limit",),
+    # embedding upgrade
+    ("embedding model", "upgrade embedding"),
+    # vector DB migration
+    ("vector store", "vector database", "migrate vector"),
+    # hybrid search
+    ("hybrid search",),
+    # cross-encoder / reranking
+    ("cross-encoder", "rerank"),
+    # prompt injection
+    ("injection", "guardrail"),
+    # input validation
+    ("input validation", "schema-level"),
+    # logging
+    ("structured log", "json log"),
+    # monitoring / grafana
+    ("prometheus", "grafana", "monitoring"),
+    # tracing
+    ("opentelemetry", "distributed trac", "langfuse"),
+    # metrics export
+    ("application metrics", "metrics backend"),
+    # health endpoint
+    ("/health", "liveness"),
+    # context window
+    ("context window", "reduce context"),
+    # prompt compression
+    ("prompt compression", "compress"),
+    # fallback model
+    ("fallback llm", "fallback model", "secondary model"),
+    # circuit breaker
+    ("circuit breaker",),
+    # parallel retrieval
+    ("parallel retrieval", "parallelise"),
+    # streaming
+    ("response streaming", "enable streaming"),
+    # async pipeline
+    ("async processing", "connection pool"),
+]
+
+
+def _semantic_key(title: str) -> str | None:
+    """Return the first matched canonical group key for a title, or None."""
+    t = title.lower()
+    for group in _SEMANTIC_KEYS:
+        if any(kw in t for kw in group):
+            return group[0]   # use the first keyword as the canonical key
+    return None
+
+
 def _deduplicate(recs: list[Recommendation]) -> list[Recommendation]:
-    seen: set[str] = set()
+    """Remove duplicates using both exact-title and semantic-group matching.
+
+    When two recommendations describe the same optimisation (matched via
+    _SEMANTIC_KEYS), the one with the higher priority / larger saving wins.
+    Ties default to the first occurrence (already sorted by priority before
+    _deduplicate is called during the rules pass).
+    """
+    seen_titles: set[str] = set()
+    seen_semantic: set[str] = set()
     out: list[Recommendation] = []
+
     for r in recs:
-        if r.title not in seen:
-            seen.add(r.title)
-            out.append(r)
+        if r.title in seen_titles:
+            continue
+        sk = _semantic_key(r.title)
+        if sk is not None and sk in seen_semantic:
+            continue
+
+        seen_titles.add(r.title)
+        if sk is not None:
+            seen_semantic.add(sk)
+        out.append(r)
+
     return out
 
 

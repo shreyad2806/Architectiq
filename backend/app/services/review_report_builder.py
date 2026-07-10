@@ -22,6 +22,8 @@ from app.services.security_analyzer import SecurityAnalyzer
 from app.services.recommendation_engine import AdvancedRecommendationEngine, RecommendationEngine
 from app.services.executive_summary_generator import ExecutiveSummaryGenerator
 from app.services.intelligence_layer import IntelligenceLayer
+from app.services.architecture_health_aggregator import ArchitectureHealthAggregator
+from app.services.roadmap_generator import RoadmapGenerator
 from app.services.report_generator import ReportGenerator
 
 
@@ -64,6 +66,8 @@ class ReviewReportBuilder:
         self._advanced_recs    = AdvancedRecommendationEngine()
         self._exec_summary     = ExecutiveSummaryGenerator()
         self._intelligence     = IntelligenceLayer()
+        self._health_aggregator = ArchitectureHealthAggregator()
+        self._roadmap_generator = RoadmapGenerator()
         self._report_generator = ReportGenerator()
 
     def build(self, request: ReviewRequest) -> dict:
@@ -119,8 +123,8 @@ class ReviewReportBuilder:
             production_score=production_result["score"],
             top_findings=top_findings,
             recommendations=recommendations,
-            cost_result=cost_result,
             advanced_rec_report=advanced_rec_report,
+            project_name=request.project_name,
         )
 
         # ── Assemble report ────────────────────────────────────────────────
@@ -148,10 +152,11 @@ class ReviewReportBuilder:
 
             # ── Cost Analysis ──────────────────────────────────────────────
             "cost_analysis": {
-                "estimated_monthly_tokens": cost_result["estimated_monthly_tokens"],
-                "estimated_monthly_cost":   cost_result["estimated_monthly_cost"],
+                "estimated_monthly_tokens":  cost_result["estimated_monthly_tokens"],
+                "estimated_monthly_cost":    cost_result["estimated_monthly_cost"],
                 "potential_monthly_savings": cost_result["potential_monthly_savings"],
                 "currency": "USD",
+                "breakdown": cost_result.get("breakdown", {}),
             },
 
             # ── Latency Analysis ───────────────────────────────────────────
@@ -225,6 +230,19 @@ class ReviewReportBuilder:
                 advanced_rec_report=advanced_rec_report,
             ),
         }
+
+        report["dynamic_roadmap"] = self._roadmap_generator.generate(
+            recommendations=advanced_rec_report["recommendations"],
+            request=request,
+        )
+
+        report["architecture_health"] = self._health_aggregator.aggregate(
+            request=request,
+            cost_result=cost_result,
+            latency_result=latency_result,
+            reliability_result=reliability_result,
+            scalability_result=scalability_result,
+        )
 
         report["audit_report"] = self._report_generator.generate(report)
 

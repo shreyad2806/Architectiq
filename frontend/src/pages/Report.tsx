@@ -5,21 +5,18 @@ import Footer from '../components/Footer'
 
 // ─── Types (best-effort, mirrors backend response shape) ─────────────────
 
-interface RoadmapPhase {
-  phase: number
-  title: string
-  timeline: string
-  tasks: string[]
-}
-
 interface Recommendation {
   priority: string
+  category?: string
   title: string
   reason: string
   expected_monthly_saving?: string
   latency_improvement?: string
   difficulty?: string
   implementation_time?: string
+  primary_benefit?: string
+  secondary_benefit?: string
+  impact_level?: string
 }
 
 interface Risk {
@@ -34,6 +31,10 @@ interface ScoreBreakdown {
   latency?: number
   reliability?: number
   scalability?: number
+  cost_efficiency_insight?: string
+  latency_insight?: string
+  reliability_insight?: string
+  scalability_insight?: string
 }
 
 interface ReportResponse {
@@ -45,6 +46,7 @@ interface ReportResponse {
     estimated_monthly_savings?: string
     estimated_latency_improvement?: string
     ai_maturity_level?: { level?: number; title?: string }
+    executive_summary?: string
   }
   architecture_overview?: {
     overall_score?: number
@@ -56,10 +58,19 @@ interface ReportResponse {
     estimated_monthly_cost?: string
     potential_monthly_savings?: string
     savings_percentage?: string
+    breakdown?: {
+      llm_cost?: string
+      embedding_cost?: string
+      vector_db_cost?: string
+      storage_cost?: string
+      infrastructure_cost?: string
+      total_before_savings?: string
+      estimated_savings?: string
+    }
   }
   critical_risks?: Risk[]
   recommendations?: Recommendation[]
-  optimization_roadmap?: RoadmapPhase[]
+  optimization_roadmap?: RoadmapPhaseRich[]
   findings_summary?: {
     total?: number
     by_severity?: { critical?: number; high?: number; medium?: number; low?: number }
@@ -72,6 +83,36 @@ interface ReportResponse {
     total_findings?: number
     total_recommendations?: number
     content_type?: string
+  }
+  agent_response?: {
+    agent?: {
+      name?: string
+      version?: string
+      status?: string
+      generated_at?: string
+    }
+    summary?: {
+      architecture_score?: number
+      grade?: string
+      production_readiness?: number
+      estimated_monthly_cost?: string
+      potential_monthly_savings?: string
+    }
+    top_priority?: {
+      title?: string
+      priority?: string
+      estimated_impact?: string
+    }
+    next_action?: string
+    report_status?: string
+  }
+  report_metadata?: {
+    report_id?: string
+    generated_at?: string
+    analysis_duration_ms?: number
+    architectiq_version?: string
+    environment?: string
+    analyzers_executed?: number
   }
 }
 
@@ -107,6 +148,78 @@ function ThinBar({ value, color = 'bg-[#6d5ce7]', max = 100 }: { value: number; 
   return (
     <div className="h-1.5 w-full overflow-hidden rounded-full bg-white/[0.06]">
       <div className={`h-full rounded-full ${color} transition-all`} style={{ width: `${pct}%` }} />
+    </div>
+  )
+}
+
+// ─── Rec impact helpers ──────────────────────────────────────────────────
+
+function _isMeaningfulSaving(v?: string): boolean {
+  if (!v) return false
+  const stripped = v.replace(/[$,\s]/g, '')
+  if (stripped === '0' || stripped === '0.00' || stripped === '') return false
+  return true
+}
+
+function _isMeaningfulLatency(v?: string): boolean {
+  if (!v) return false
+  const stripped = v.replace(/[%\s]/g, '').replace(/^-/, '')
+  if (stripped === '0' || stripped === '0.0' || stripped === '0.00' || stripped === '') return false
+  return true
+}
+
+const _IMPACT_COLORS: Record<string, string> = {
+  HIGH:   'text-red-400',
+  MEDIUM: 'text-amber-400',
+  LOW:    'text-sky-400',
+}
+
+// Renders the bottom metric grid for a recommendation card.
+// When savings and latency are both zero/absent, shows primary_benefit + impact_level instead.
+function RecImpactMetrics({ rec, compact = false }: { rec: Recommendation; compact?: boolean }) {
+  const hasSaving  = _isMeaningfulSaving(rec.expected_monthly_saving)
+  const hasLatency = _isMeaningfulLatency(rec.latency_improvement)
+
+  const labelCls = `font-mono text-[10px] uppercase tracking-widest text-slate-600`
+  const valCls   = compact ? 'mt-0.5 text-[12px] font-medium text-slate-300'
+                           : 'mt-1 text-[13px] font-medium text-slate-200'
+
+  const impactLevel = (rec.impact_level || rec.priority || 'LOW').toUpperCase()
+  const impactColor = _IMPACT_COLORS[impactLevel] ?? 'text-slate-400'
+
+  // Always show difficulty + time; swap savings/latency for benefit/impact when zero
+  const metricPairs: { label: string; value: React.ReactNode }[] = []
+
+  if (hasSaving) {
+    metricPairs.push({ label: 'Savings', value: <span className="text-emerald-400">{rec.expected_monthly_saving}</span> })
+  } else if (rec.primary_benefit) {
+    metricPairs.push({ label: 'Primary Benefit', value: <span className="text-slate-200">{rec.primary_benefit}</span> })
+  }
+
+  if (hasLatency) {
+    metricPairs.push({ label: 'Latency', value: <span className="text-violet-400">{rec.latency_improvement}</span> })
+  } else if (rec.secondary_benefit) {
+    metricPairs.push({ label: 'Secondary Benefit', value: <span className="text-slate-200">{rec.secondary_benefit}</span> })
+  } else if (rec.primary_benefit && hasSaving) {
+    metricPairs.push({ label: 'Benefit', value: <span className="text-slate-200">{rec.primary_benefit}</span> })
+  }
+
+  metricPairs.push({ label: 'Difficulty', value: <span>{str(rec.difficulty, '—')}</span> })
+  metricPairs.push({ label: 'Time',       value: <span>{str(rec.implementation_time, '—')}</span> })
+
+  // When neither savings nor latency, add Impact level as 5th cell (replaces empty space)
+  if (!hasSaving && !hasLatency) {
+    metricPairs.push({ label: 'Impact', value: <span className={impactColor}>{impactLevel.charAt(0) + impactLevel.slice(1).toLowerCase()}</span> })
+  }
+
+  return (
+    <div className="grid grid-cols-2 gap-x-6 gap-y-3">
+      {metricPairs.map(({ label, value }) => (
+        <div key={label}>
+          <p className={labelCls}>{label}</p>
+          <p className={valCls}>{value}</p>
+        </div>
+      ))}
     </div>
   )
 }
@@ -237,21 +350,38 @@ function ExecutiveSummary({ r }: { r: ReportResponse }) {
         <span className="font-mono text-[11px] text-slate-600">ArchitectIQ Audit Engine · v1.0</span>
       </div>
       <div className="space-y-4 text-[14px] leading-7 text-slate-300">
-        <p>
-          ArchitectIQ analyzed your production AI stack and identified{' '}
-          <span className="font-semibold text-white">{findings} optimization opportunities</span>.
-        </p>
-        <p>
-          The highest-impact improvements are{' '}
-          <span className="text-white font-medium">{topRecs.slice(0, 3).join(', ')}</span>.
-        </p>
-        <p>
-          These changes are estimated to reduce monthly AI infrastructure costs by{' '}
-          <span className="font-semibold text-emerald-400">{savings} ({savePct})</span> while
-          improving production readiness from{' '}
-          <span className="text-white font-medium">{score}</span> to{' '}
-          <span className="text-white font-medium">{newScore}</span>.
-        </p>
+        {r.intelligence_summary?.executive_summary ? (
+          r.intelligence_summary.executive_summary
+            .split('. ')
+            .filter(Boolean)
+            .reduce<string[][]>((acc, s, i) => {
+              const groupIdx = Math.floor(i / 2)
+              if (!acc[groupIdx]) acc[groupIdx] = []
+              acc[groupIdx].push(s)
+              return acc
+            }, [])
+            .map((group, gi) => (
+              <p key={gi}>{group.map((s, si) => s + (si < group.length - 1 ? '. ' : '')).join('')}</p>
+            ))
+        ) : (
+          <>
+            <p>
+              ArchitectIQ analyzed your production AI stack and identified{' '}
+              <span className="font-semibold text-white">{findings} optimization opportunities</span>.
+            </p>
+            <p>
+              The highest-impact improvements are{' '}
+              <span className="text-white font-medium">{topRecs.slice(0, 3).join(', ')}</span>.
+            </p>
+            <p>
+              These changes are estimated to reduce monthly AI infrastructure costs by{' '}
+              <span className="font-semibold text-emerald-400">{savings} ({savePct})</span> while
+              improving production readiness from{' '}
+              <span className="text-white font-medium">{score}</span> to{' '}
+              <span className="text-white font-medium">{newScore}</span>.
+            </p>
+          </>
+        )}
       </div>
       <div className="mt-8 h-px bg-white/[0.06]" />
       <div className="mt-5 flex flex-wrap gap-2">
@@ -268,15 +398,48 @@ function ExecutiveSummary({ r }: { r: ReportResponse }) {
   )
 }
 
+// ─── Cost Breakdown panel ────────────────────────────────────────────────
+
+function CostBreakdownPanel({ r }: { r: ReportResponse }) {
+  const bd = r.cost_analysis?.breakdown
+  if (!bd || Object.keys(bd).length === 0) return null
+
+  const lines: { label: string; value: string; accent?: boolean }[] = [
+    { label: 'LLM Inference',      value: str(bd.llm_cost,            '$0') },
+    { label: 'Embedding',          value: str(bd.embedding_cost,      '$0') },
+    { label: 'Vector Database',    value: str(bd.vector_db_cost,      '$0') },
+    { label: 'Storage',            value: str(bd.storage_cost,        '$0') },
+    { label: 'Infrastructure',     value: str(bd.infrastructure_cost, '$0') },
+    { label: 'Gross Total',        value: str(bd.total_before_savings, '$0') },
+    { label: 'Est. Savings',       value: str(bd.estimated_savings,   '$0'), accent: true },
+  ]
+
+  return (
+    <Card className="p-6">
+      <MonoEyebrow>Cost Breakdown</MonoEyebrow>
+      <div className="mt-5 space-y-2">
+        {lines.map(({ label, value, accent }) => (
+          <div key={label} className="flex items-center justify-between border-b border-white/[0.04] pb-2 last:border-0">
+            <span className="text-[13px] text-slate-400">{label}</span>
+            <span className={`font-mono text-[13px] font-semibold ${
+              accent ? 'text-emerald-400' : 'text-white'
+            }`}>{value}</span>
+          </div>
+        ))}
+      </div>
+    </Card>
+  )
+}
+
 // ─── Section 3: Architecture Health ──────────────────────────────────────
 
 function ArchitectureHealth({ r }: { r: ReportResponse }) {
   const sb = r.architecture_overview?.score_breakdown
   const cards = [
-    { title: 'Cost Efficiency', score: num(sb?.cost_efficiency, 85), color: 'bg-sky-500',     insight: 'Caching would reduce token spend' },
-    { title: 'Latency',         score: num(sb?.latency, 90),          color: 'bg-[#6d5ce7]',  insight: 'P95 within target SLA' },
-    { title: 'Reliability',     score: num(sb?.reliability, 82),      color: 'bg-amber-500',  insight: 'Circuit breaker absent' },
-    { title: 'Scalability',     score: num(sb?.scalability, 92),      color: 'bg-emerald-500',insight: 'Auto-scaling configured' },
+    { title: 'Cost Efficiency', score: num(sb?.cost_efficiency, 85), color: 'bg-sky-500',      insight: str(sb?.cost_efficiency_insight, 'Caching would reduce token spend') },
+    { title: 'Latency',         score: num(sb?.latency, 90),          color: 'bg-[#6d5ce7]',   insight: str(sb?.latency_insight,          'P95 within target SLA') },
+    { title: 'Reliability',     score: num(sb?.reliability, 82),      color: 'bg-amber-500',   insight: str(sb?.reliability_insight,      'Circuit breaker absent') },
+    { title: 'Scalability',     score: num(sb?.scalability, 92),      color: 'bg-emerald-500', insight: str(sb?.scalability_insight,      'Auto-scaling configured') },
   ]
 
   return (
@@ -354,57 +517,42 @@ function CriticalRisks({ r }: { r: ReportResponse }) {
   )
 }
 
-// ─── Section 5: Recommendations ───────────────────────────────────────────
-
-function Recommendations({ r }: { r: ReportResponse }) {
-  const recs: Recommendation[] = r.recommendations?.length
-    ? r.recommendations
-    : [
-        { priority: 'HIGH', title: 'Enable Semantic Cache', reason: 'Repeated prompts generate unnecessary token costs.', expected_monthly_saving: '$4.2K/month', latency_improvement: '-32%', difficulty: 'Easy', implementation_time: '2 hours' },
-        { priority: 'MEDIUM', title: 'Switch to GPT-4.1 Mini', reason: 'High request volume doesn\'t require GPT-4 for every query.', expected_monthly_saving: '$2.8K/month', latency_improvement: '-18%', difficulty: 'Easy', implementation_time: '30 minutes' },
-        { priority: 'HIGH', title: 'Implement Circuit Breaker', reason: 'Vector store client needs graceful failure handling.', expected_monthly_saving: '$0', latency_improvement: '0%', difficulty: 'Medium', implementation_time: '1 day' },
-        { priority: 'MEDIUM', title: 'Enable Distributed Tracing', reason: 'No end-to-end visibility across the request pipeline.', expected_monthly_saving: '$0', latency_improvement: '-8%', difficulty: 'Medium', implementation_time: '3 hours' },
-      ]
-
-  return (
-    <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-      {recs.map((rec, i) => (
-        <Card key={i} className="p-6">
-          <div className="flex items-start justify-between gap-3 mb-4">
-            <PriorityBadge priority={rec.priority} />
-          </div>
-          <h3 className="text-[15px] font-semibold text-white mb-2">{rec.title}</h3>
-          <p className="text-[13px] leading-relaxed text-slate-400 mb-5">{rec.reason}</p>
-          <div className="h-px bg-white/[0.06] mb-4" />
-          <div className="grid grid-cols-2 gap-x-6 gap-y-3">
-            {[
-              { label: 'Savings',    value: str(rec.expected_monthly_saving, '—') },
-              { label: 'Latency',    value: str(rec.latency_improvement, '—') },
-              { label: 'Difficulty', value: str(rec.difficulty, '—') },
-              { label: 'Time',       value: str(rec.implementation_time, '—') },
-            ].map(({ label, value }) => (
-              <div key={label}>
-                <p className="font-mono text-[10px] uppercase tracking-widest text-slate-600">{label}</p>
-                <p className="mt-1 text-[13px] font-medium text-slate-200">{value}</p>
-              </div>
-            ))}
-          </div>
-        </Card>
-      ))}
-    </div>
-  )
-}
-
 // ─── Section 6: Optimization Roadmap ─────────────────────────────────────
 
+interface RoadmapTask {
+  title: string
+  priority: string
+  category?: string
+  reason?: string
+  expected_monthly_saving?: string
+  latency_improvement?: string
+  difficulty?: string
+  implementation_time?: string
+}
+
+interface RoadmapPhaseRich {
+  phase: number
+  title: string
+  timeline: string
+  tasks: RoadmapTask[] | string[]
+}
+
+function _priorityDot(priority: string) {
+  if (priority === 'HIGH')   return 'bg-red-400'
+  if (priority === 'MEDIUM') return 'bg-amber-400'
+  return 'bg-slate-500'
+}
+
 function OptimizationRoadmap({ r }: { r: ReportResponse }) {
-  const phases: RoadmapPhase[] = r.optimization_roadmap?.length
-    ? r.optimization_roadmap
-    : [
-        { phase: 1, title: 'Quick Wins',   timeline: 'Today',  tasks: ['Enable cache', 'Circuit breaker', 'Rate limiting'] },
-        { phase: 2, title: 'Performance',  timeline: 'Week 1', tasks: ['Parallel retrieval', 'Prompt compression', 'Streaming'] },
-        { phase: 3, title: 'Production',   timeline: 'Week 2', tasks: ['Observability', 'Langfuse', 'Auto scaling'] },
-      ]
+  const phases: RoadmapPhaseRich[] = r.optimization_roadmap ?? []
+
+  if (!phases.length) {
+    return (
+      <Card className="p-6 lg:p-8">
+        <p className="text-[13px] text-slate-500">No optimization actions required — architecture meets production standards.</p>
+      </Card>
+    )
+  }
 
   return (
     <Card className="p-6 lg:p-8">
@@ -428,13 +576,28 @@ function OptimizationRoadmap({ r }: { r: ReportResponse }) {
                 <span className="inline-block rounded-full border border-white/[0.07] bg-white/[0.03] px-2.5 py-1 font-mono text-[11px] text-slate-400 mb-4">
                   {phase.timeline}
                 </span>
-                <ul className="space-y-2">
-                  {phase.tasks.map((task) => (
-                    <li key={task} className="flex items-center gap-2 text-[13px] text-slate-400">
-                      <span className="h-1.5 w-1.5 rounded-full bg-[#6d5ce7]/60 shrink-0" />
-                      {task}
-                    </li>
-                  ))}
+                <ul className="space-y-3">
+                  {phase.tasks.map((task, ti) => {
+                    const isRich = typeof task === 'object' && task !== null
+                    const title  = isRich ? (task as RoadmapTask).title : (task as string)
+                    const prio   = isRich ? (task as RoadmapTask).priority : null
+                    const saving = isRich ? (task as RoadmapTask).expected_monthly_saving : null
+                    const latency = isRich ? (task as RoadmapTask).latency_improvement : null
+                    return (
+                      <li key={ti} className="space-y-1">
+                        <div className="flex items-start gap-2">
+                          <span className={`mt-1.5 h-1.5 w-1.5 rounded-full shrink-0 ${prio ? _priorityDot(prio) : 'bg-[#6d5ce7]/60'}`} />
+                          <span className="text-[13px] text-slate-300 leading-snug">{title}</span>
+                        </div>
+                        {(saving && saving !== '$0') || latency ? (
+                          <div className="ml-3.5 flex gap-3 font-mono text-[11px] text-slate-500">
+                            {saving && saving !== '$0' && <span>{saving}/mo</span>}
+                            {latency && latency !== '0%' && <span>{latency} latency</span>}
+                          </div>
+                        ) : null}
+                      </li>
+                    )
+                  })}
                 </ul>
               </div>
             </div>
@@ -447,57 +610,67 @@ function OptimizationRoadmap({ r }: { r: ReportResponse }) {
 
 // ─── Section 7: AI Agent API Response ────────────────────────────────────
 
-function AgentApiResponse({ r, request }: { r: ReportResponse; request: unknown }) {
-  const ar = r.audit_report
-  const snippet = JSON.stringify(
-    {
-      status: 'success',
-      report_id: ar?.report_id ?? 'arc-' + Math.random().toString(36).slice(2, 9),
-      audit_duration_ms: ar?.audit_duration_ms ?? 847,
-      generated_at: ar?.generated_at ?? new Date().toISOString(),
-      total_findings: ar?.total_findings ?? r.findings_summary?.total ?? 8,
-      total_recommendations: ar?.total_recommendations ?? r.recommendations?.length ?? 4,
-      architecture_score: r.architecture_overview?.overall_score ?? 88,
-      estimated_monthly_savings: r.cost_analysis?.potential_monthly_savings ?? '$8.7K',
-      content_type: 'application/json',
-    },
-    null,
-    2
-  )
+function AgentApiResponse({ r }: { r: ReportResponse; request?: unknown }) {
+  const payload = r.agent_response ?? null
+  const snippet = payload
+    ? JSON.stringify(payload, null, 2)
+    : JSON.stringify(
+        {
+          agent:        { name: 'ArchitectIQ', version: '1.0.0', status: 'pending', generated_at: new Date().toISOString() },
+          summary:      { architecture_score: 0, grade: '-', production_readiness: 0, estimated_monthly_cost: '$0', potential_monthly_savings: '$0' },
+          top_priority: { title: 'No recommendations', priority: 'LOW', estimated_impact: 'N/A' },
+          next_action:  'Run a full review to generate recommendations.',
+          report_status: 'pending',
+        },
+        null,
+        2
+      )
+
+  const coloredLines = snippet.split('\n').map((line) => {
+    if (/"status"\s*:\s*"completed"/.test(line))
+      return <span key={line} className="text-emerald-400">{line}</span>
+    if (/"report_status"\s*:\s*"complete"/.test(line))
+      return <span key={line} className="text-emerald-400">{line}</span>
+    if (/"priority"\s*:\s*"HIGH"/.test(line))
+      return <span key={line} className="text-amber-400">{line}</span>
+    if (/^\s+"[a-z_]+":/.test(line)) {
+      const [key, ...rest] = line.split(':')
+      return (
+        <span key={line}>
+          <span className="text-[#8b7ff0]">{key}</span>:{rest.join(':')}
+        </span>
+      )
+    }
+    return <span key={line}>{line}</span>
+  })
+
+  const version = payload?.agent?.version ?? '1.0'
 
   return (
     <div className="overflow-hidden rounded-xl border border-white/[0.07] bg-[#090c14]">
-      {/* Terminal header */}
       <div className="flex items-center justify-between border-b border-white/[0.07] bg-[#0d1017] px-5 py-3">
         <div className="flex items-center gap-2">
           <span className="h-3 w-3 rounded-full bg-red-500/70" />
           <span className="h-3 w-3 rounded-full bg-yellow-500/70" />
           <span className="h-3 w-3 rounded-full bg-emerald-500/70" />
-          <span className="ml-3 font-mono text-[11px] text-slate-500">Machine Readable Report</span>
+          <span className="ml-3 font-mono text-[11px] text-slate-500">AI Agent Response</span>
         </div>
-        <div className="flex items-center gap-3">
-          <span className="font-mono text-[11px] text-emerald-400">
-            <span className="text-slate-500">POST /review</span> · 200 OK
-          </span>
-        </div>
+        <span className="font-mono text-[11px] text-emerald-400">
+          <span className="text-slate-500">POST /api/v1/review</span> · 200 OK
+        </span>
       </div>
       <pre
         className="overflow-x-auto p-6 text-[12px] leading-relaxed text-slate-300"
         style={{ fontFamily: "'JetBrains Mono', 'Fira Code', monospace" }}
       >
-        <code>
-          {snippet
-            .replace(/"([^"]+)":/g, (_, k) => `"${k}":`)
-            .split('\n')
-            .map((line, i) => {
-              if (line.includes('status') || line.includes('200')) return `\u001b[0m${line}`
-              return line
-            })
-            .join('\n')}
-        </code>
+        <code className="block">{coloredLines.map((el, i) => (
+          <span key={i}>{el}{i < coloredLines.length - 1 ? '\n' : ''}</span>
+        ))}</code>
       </pre>
       <div className="border-t border-white/[0.07] bg-[#0d1017] px-5 py-3">
-        <span className="font-mono text-[11px] text-slate-600">Content-Type: application/json · ArchitectIQ API v1.0</span>
+        <span className="font-mono text-[11px] text-slate-600">
+          Content-Type: application/json · ArchitectIQ API v{version}
+        </span>
       </div>
     </div>
   )
@@ -590,6 +763,51 @@ function AgentReady() {
   )
 }
 
+// ─── Report Metadata Bar ───────────────────────────────────────────────────
+
+function _fmtDate(iso?: string): string {
+  if (!iso) return '—'
+  try {
+    const d = new Date(iso)
+    return d.toLocaleDateString('en-GB', {
+      day: '2-digit', month: 'short', year: 'numeric',
+      timeZone: 'UTC',
+    }) + ' • ' + d.toLocaleTimeString('en-GB', {
+      hour: '2-digit', minute: '2-digit', timeZone: 'UTC', hour12: false,
+    }) + ' UTC'
+  } catch {
+    return iso
+  }
+}
+
+interface ReportMetadataBarProps {
+  meta?: ReportResponse['report_metadata']
+}
+
+function ReportMetadataBar({ meta }: ReportMetadataBarProps) {
+  if (!meta) return null
+
+  const items: { label: string; value: string }[] = [
+    { label: 'Generated',    value: _fmtDate(meta.generated_at) },
+    { label: 'Duration',     value: meta.analysis_duration_ms != null ? `${meta.analysis_duration_ms} ms` : '—' },
+    { label: 'Version',      value: meta.architectiq_version ? `ArchitectIQ v${meta.architectiq_version}` : '—' },
+    { label: 'Environment',  value: meta.environment ?? '—' },
+    { label: 'Analyzers',    value: meta.analyzers_executed != null ? `${meta.analyzers_executed} executed` : '—' },
+    { label: 'Report ID',    value: meta.report_id ?? '—' },
+  ]
+
+  return (
+    <div className="mt-6 flex flex-wrap gap-x-8 gap-y-3">
+      {items.map(({ label, value }) => (
+        <div key={label} className="flex flex-col gap-0.5">
+          <span className="font-mono text-[10px] uppercase tracking-widest text-slate-600">{label}</span>
+          <span className="font-mono text-[12px] text-slate-300">{value}</span>
+        </div>
+      ))}
+    </div>
+  )
+}
+
 // ─── Main page ─────────────────────────────────────────────────────────────
 
 export default function Report() {
@@ -654,13 +872,12 @@ export default function Report() {
             </span>
           </div>
           <h1 className="mt-5 text-4xl font-bold tracking-tight text-white lg:text-5xl">
-            Report: {projectName} /{' '}
-            <span className="text-slate-400">report.json</span>
+            Architecture Audit Report
           </h1>
-          <p className="mt-4 max-w-2xl text-[15px] leading-relaxed text-slate-400">
-            Detailed analysis of your AI architecture. Surfacing cost inefficiencies, latency
-            bottlenecks, reliability gaps and scalability limits.
+          <p className="mt-2 text-[17px] text-slate-400 font-medium">
+            Project: <span className="text-white">{projectName}</span>
           </p>
+          <ReportMetadataBar meta={r.report_metadata} />
         </div>
 
         {/* ── S1: Hero metrics ───────────────────────────────────── */}
@@ -674,10 +891,18 @@ export default function Report() {
           <ExecutiveSummary r={r} />
         </section>
 
-        {/* ── S3: Architecture Health ────────────────────────────── */}
+        {/* ── S3: Architecture Health + Cost Breakdown ───────────── */}
         <section className="mb-12">
-          <SectionHeading eyebrow="Audit Dimensions" title="Architecture Health" />
-          <ArchitectureHealth r={r} />
+          <div className="grid grid-cols-1 gap-8 lg:grid-cols-3">
+            <div className="lg:col-span-2">
+              <SectionHeading eyebrow="Audit Dimensions" title="Architecture Health" />
+              <ArchitectureHealth r={r} />
+            </div>
+            <div>
+              <SectionHeading eyebrow="Infrastructure" title="Cost Breakdown" />
+              <CostBreakdownPanel r={r} />
+            </div>
+          </div>
         </section>
 
         {/* ── S4 + S5: Risks and Recommendations (two-col on lg) ─── */}
@@ -691,29 +916,24 @@ export default function Report() {
               <SectionHeading eyebrow="Opportunities" title="Recommendations" />
               <div className="space-y-4">
                 {(r.recommendations?.length ? r.recommendations : [
-                  { priority: 'HIGH',   title: 'Enable Semantic Cache',    reason: 'Repeated prompts generate unnecessary token costs.',                    expected_monthly_saving: '$4.2K/month', latency_improvement: '-32%', difficulty: 'Easy',   implementation_time: '2 hours' },
-                  { priority: 'MEDIUM', title: 'Switch to GPT-4.1 Mini',   reason: "High volume doesn't require GPT-4 for every query.",                   expected_monthly_saving: '$2.8K/month', latency_improvement: '-18%', difficulty: 'Easy',   implementation_time: '30 minutes' },
-                  { priority: 'HIGH',   title: 'Implement Circuit Breaker', reason: 'Vector store needs graceful failure handling.',                         expected_monthly_saving: '$0',          latency_improvement: '0%',   difficulty: 'Medium', implementation_time: '1 day' },
-                  { priority: 'MEDIUM', title: 'Enable Distributed Tracing', reason: 'No end-to-end visibility across the request pipeline.',               expected_monthly_saving: '$0',          latency_improvement: '-8%',  difficulty: 'Medium', implementation_time: '3 hours' },
+                  { priority: 'HIGH',   category: 'Cost Optimization', title: 'Enable Semantic Cache',    reason: 'Repeated prompts generate unnecessary token costs.',  expected_monthly_saving: '$4.2K/month', latency_improvement: '35%', difficulty: 'Easy',   implementation_time: '2 hours',    primary_benefit: 'Cost',        secondary_benefit: 'Performance', impact_level: 'HIGH' },
+                  { priority: 'MEDIUM', category: 'Cost Optimization', title: 'Switch to GPT-4.1 Mini',   reason: "High volume doesn't require GPT-4 for every query.",  expected_monthly_saving: '$2.8K/month', latency_improvement: '18%', difficulty: 'Easy',   implementation_time: '30 minutes', primary_benefit: 'Cost',        secondary_benefit: 'Performance', impact_level: 'MEDIUM' },
+                  { priority: 'HIGH',   category: 'Reliability',       title: 'Implement Circuit Breaker', reason: 'Vector store needs graceful failure handling.',        expected_monthly_saving: '$0',          latency_improvement: '0%',  difficulty: 'Medium', implementation_time: '1 day',      primary_benefit: 'Reliability', secondary_benefit: 'Availability', impact_level: 'HIGH' },
+                  { priority: 'MEDIUM', category: 'Observability',     title: 'Enable Distributed Tracing', reason: 'No end-to-end visibility across the request pipeline.', expected_monthly_saving: '$0',        latency_improvement: '0%',  difficulty: 'Medium', implementation_time: '3 hours',    primary_benefit: 'Observability', secondary_benefit: 'Performance', impact_level: 'MEDIUM' },
                 ] as Recommendation[]).slice(0, 4).map((rec, i) => (
                   <Card key={i} className="p-5">
-                    <div className="mb-3"><PriorityBadge priority={rec.priority} /></div>
+                    <div className="flex items-center justify-between mb-3">
+                      <PriorityBadge priority={rec.priority} />
+                      {rec.category && (
+                        <span className="font-mono text-[10px] uppercase tracking-widest text-slate-600">
+                          {rec.category}
+                        </span>
+                      )}
+                    </div>
                     <h3 className="text-[14px] font-semibold text-white mb-1.5">{rec.title}</h3>
                     <p className="text-[12px] leading-relaxed text-slate-400 mb-4">{rec.reason}</p>
                     <div className="h-px bg-white/[0.06] mb-3" />
-                    <div className="grid grid-cols-2 gap-x-4 gap-y-2.5">
-                      {[
-                        { label: 'Savings',    value: str(rec.expected_monthly_saving, '—') },
-                        { label: 'Latency',    value: str(rec.latency_improvement, '—') },
-                        { label: 'Difficulty', value: str(rec.difficulty, '—') },
-                        { label: 'Time',       value: str(rec.implementation_time, '—') },
-                      ].map(({ label, value }) => (
-                        <div key={label}>
-                          <p className="font-mono text-[10px] uppercase tracking-widest text-slate-600">{label}</p>
-                          <p className="mt-0.5 text-[12px] font-medium text-slate-300">{value}</p>
-                        </div>
-                      ))}
-                    </div>
+                    <RecImpactMetrics rec={rec} compact />
                   </Card>
                 ))}
               </div>

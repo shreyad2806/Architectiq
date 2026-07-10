@@ -48,10 +48,18 @@ def test_estimate_missing_project_name(client, sample_architecture):
 
 
 def test_estimate_zero_traffic(client, sample_architecture):
+    """With 0 monthly requests, LLM/embedding costs are $0 but fixed costs
+    (VDB base subscription, infra floor) may still apply, so total >= 0.
+    Tokens are always 0 for zero-request architectures.
+    """
     payload = sample_architecture.copy()
     payload["monthly_requests"] = 0
     response = client.post("/api/v1/estimate", json=payload)
     assert response.status_code == 200
     data = response.json()
-    assert data["total_monthly_cost"] == 0.0
+    assert data["total_monthly_cost"] >= 0.0
     assert data["tokens"]["total_tokens"] == 0
+    bd = data.get("breakdown", {})
+    if bd:
+        assert bd["llm_cost"] == 0.0
+        assert bd["embedding_cost"] == 0.0

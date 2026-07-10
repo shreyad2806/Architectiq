@@ -151,6 +151,33 @@ def _raw_report(
             "production_readiness": f"{production_score}/100",
         },
         "top_findings": [],
+        "dynamic_roadmap": [
+            {
+                "phase": 1, "title": "Quick Wins", "timeline": "Today",
+                "tasks": [
+                    {"title": "Enforce API Authentication (OAuth 2.0 / JWT)",
+                     "priority": "HIGH", "category": "Security",
+                     "reason": "Unauthenticated endpoints.",
+                     "expected_monthly_saving": "$0", "latency_improvement": "0%",
+                     "difficulty": "Easy", "implementation_time": "2 hours"},
+                    {"title": "Enable Semantic Caching",
+                     "priority": "HIGH", "category": "Cost Optimization",
+                     "reason": "Reduce token spend.",
+                     "expected_monthly_saving": "$780", "latency_improvement": "35%",
+                     "difficulty": "Easy", "implementation_time": "2 hours"},
+                ],
+            },
+            {
+                "phase": 2, "title": "Performance Improvements", "timeline": "This Week",
+                "tasks": [
+                    {"title": "Add Hybrid Search (Dense + Sparse Retrieval)",
+                     "priority": "MEDIUM", "category": "RAG Optimization",
+                     "reason": "Improve recall.",
+                     "expected_monthly_saving": "$0", "latency_improvement": "0%",
+                     "difficulty": "Medium", "implementation_time": "4 hours"},
+                ],
+            },
+        ],
     }
 
 
@@ -250,14 +277,18 @@ def test_phase_for_scale_rag_medium():
 
 # ---------------------------------------------------------------------------
 # _build_optimization_roadmap unit tests
+# (function now reads raw_report["dynamic_roadmap"] — delegate contract)
 # ---------------------------------------------------------------------------
 
 def test_roadmap_output_keys():
-    recs = [
-        {"priority": "HIGH", "title": "Enable Cache", "category": "Cost Optimization",
-         "difficulty": "Easy", "implementation_time": "2 hours"},
-    ]
-    roadmap = _build_optimization_roadmap(recs)
+    raw = {"dynamic_roadmap": [
+        {"phase": 1, "title": "Quick Wins", "timeline": "Today",
+         "tasks": [{"title": "Enable Cache", "priority": "HIGH",
+                    "category": "Cost Optimization", "reason": "",
+                    "difficulty": "Easy", "implementation_time": "2 hours",
+                    "expected_monthly_saving": "$0", "latency_improvement": "0%"}]},
+    ]}
+    roadmap = _build_optimization_roadmap(raw)
     assert len(roadmap) == 1
     phase = roadmap[0]
     assert "phase" in phase
@@ -266,45 +297,45 @@ def test_roadmap_output_keys():
     assert "tasks" in phase
 
 
-def test_roadmap_tasks_are_strings():
-    recs = [
-        {"priority": "HIGH", "title": "Enable Cache", "category": "Cost Optimization",
-         "difficulty": "Easy", "implementation_time": "2 hours"},
-        {"priority": "HIGH", "title": "Add Auth", "category": "Security",
-         "difficulty": "Easy", "implementation_time": "1 hour"},
-    ]
-    roadmap = _build_optimization_roadmap(recs)
+def test_roadmap_tasks_are_dicts():
+    raw = {"dynamic_roadmap": [
+        {"phase": 1, "title": "Quick Wins", "timeline": "Today",
+         "tasks": [
+             {"title": "Enable Cache", "priority": "HIGH", "category": "Cost Optimization",
+              "reason": "", "difficulty": "Easy", "implementation_time": "2 hours",
+              "expected_monthly_saving": "$0", "latency_improvement": "0%"},
+             {"title": "Add Auth", "priority": "HIGH", "category": "Security",
+              "reason": "", "difficulty": "Easy", "implementation_time": "1 hour",
+              "expected_monthly_saving": "$0", "latency_improvement": "0%"},
+         ]},
+    ]}
+    roadmap = _build_optimization_roadmap(raw)
     for phase in roadmap:
         for task in phase["tasks"]:
-            assert isinstance(task, str)
+            assert isinstance(task, dict)
+            assert "title" in task
 
 
 def test_roadmap_phase_titles():
-    recs = [
-        {"priority": "HIGH",   "title": "Easy Win",    "category": "Cost Optimization",
-         "difficulty": "Easy",   "implementation_time": "30 minutes"},
-        {"priority": "MEDIUM", "title": "Infra Work",  "category": "Reliability",
-         "difficulty": "Medium", "implementation_time": "1 day"},
-        {"priority": "LOW",    "title": "Big Refactor", "category": "RAG Optimization",
-         "difficulty": "Hard",   "implementation_time": "1 week"},
-    ]
-    roadmap = _build_optimization_roadmap(recs)
+    raw = {"dynamic_roadmap": [
+        {"phase": 1, "title": "Quick Wins",              "timeline": "Today",       "tasks": [{"title": "T1", "priority": "HIGH", "category": "", "reason": "", "difficulty": "Easy", "implementation_time": "1 hour", "expected_monthly_saving": "$0", "latency_improvement": "0%"}]},
+        {"phase": 2, "title": "Performance Improvements", "timeline": "This Week",  "tasks": [{"title": "T2", "priority": "MEDIUM", "category": "", "reason": "", "difficulty": "Medium", "implementation_time": "1 day", "expected_monthly_saving": "$0", "latency_improvement": "0%"}]},
+        {"phase": 3, "title": "Production Scaling",       "timeline": "This Month", "tasks": [{"title": "T3", "priority": "LOW", "category": "", "reason": "", "difficulty": "Hard", "implementation_time": "1 week", "expected_monthly_saving": "$0", "latency_improvement": "0%"}]},
+    ]}
+    roadmap = _build_optimization_roadmap(raw)
     titles = {p["title"] for p in roadmap}
-    assert "Immediate Wins" in titles
-    assert "Production Hardening" in titles
-    assert "Scale" in titles
+    assert "Quick Wins" in titles
+    assert "Performance Improvements" in titles
+    assert "Production Scaling" in titles
 
 
 def test_roadmap_phase_timelines():
-    recs = [
-        {"priority": "HIGH",   "title": "Easy Win",    "category": "Cost Optimization",
-         "difficulty": "Easy",   "implementation_time": "30 minutes"},
-        {"priority": "MEDIUM", "title": "Infra Work",  "category": "Reliability",
-         "difficulty": "Medium", "implementation_time": "1 day"},
-        {"priority": "LOW",    "title": "Big Refactor", "category": "RAG Optimization",
-         "difficulty": "Hard",   "implementation_time": "1 week"},
-    ]
-    roadmap = _build_optimization_roadmap(recs)
+    raw = {"dynamic_roadmap": [
+        {"phase": 1, "title": "Quick Wins",              "timeline": "Today",       "tasks": [{"title": "T1", "priority": "HIGH", "category": "", "reason": "", "difficulty": "Easy", "implementation_time": "1 hour", "expected_monthly_saving": "$0", "latency_improvement": "0%"}]},
+        {"phase": 2, "title": "Performance Improvements", "timeline": "This Week",  "tasks": [{"title": "T2", "priority": "MEDIUM", "category": "", "reason": "", "difficulty": "Medium", "implementation_time": "1 day", "expected_monthly_saving": "$0", "latency_improvement": "0%"}]},
+        {"phase": 3, "title": "Production Scaling",       "timeline": "This Month", "tasks": [{"title": "T3", "priority": "LOW", "category": "", "reason": "", "difficulty": "Hard", "implementation_time": "1 week", "expected_monthly_saving": "$0", "latency_improvement": "0%"}]},
+    ]}
+    roadmap = _build_optimization_roadmap(raw)
     timelines = {p["timeline"] for p in roadmap}
     assert "Today" in timelines
     assert "This Week" in timelines
@@ -312,42 +343,48 @@ def test_roadmap_phase_timelines():
 
 
 def test_roadmap_phases_sorted():
-    recs = [
-        {"priority": "LOW",  "title": "Hard Task",  "category": "Scale",
-         "difficulty": "Hard",   "implementation_time": "2 weeks"},
-        {"priority": "HIGH", "title": "Quick Fix",  "category": "Security",
-         "difficulty": "Easy",   "implementation_time": "1 hour"},
-        {"priority": "HIGH", "title": "Medium Fix", "category": "Reliability",
-         "difficulty": "Medium", "implementation_time": "1 day"},
-    ]
-    roadmap = _build_optimization_roadmap(recs)
+    raw = {"dynamic_roadmap": [
+        {"phase": 1, "title": "Quick Wins",              "timeline": "Today",       "tasks": [{"title": "T1", "priority": "HIGH", "category": "", "reason": "", "difficulty": "Easy", "implementation_time": "1 hour", "expected_monthly_saving": "$0", "latency_improvement": "0%"}]},
+        {"phase": 3, "title": "Production Scaling",       "timeline": "This Month", "tasks": [{"title": "T3", "priority": "LOW", "category": "", "reason": "", "difficulty": "Hard", "implementation_time": "1 week", "expected_monthly_saving": "$0", "latency_improvement": "0%"}]},
+    ]}
+    roadmap = _build_optimization_roadmap(raw)
     phase_nums = [p["phase"] for p in roadmap]
     assert phase_nums == sorted(phase_nums)
 
 
 def test_roadmap_omits_empty_phases():
-    recs = [
-        {"priority": "HIGH", "title": "Only Easy", "category": "Security",
-         "difficulty": "Easy", "implementation_time": "2 hours"},
-    ]
-    roadmap = _build_optimization_roadmap(recs)
+    raw = {"dynamic_roadmap": [
+        {"phase": 1, "title": "Quick Wins", "timeline": "Today",
+         "tasks": [{"title": "Only Easy", "priority": "HIGH", "category": "Security",
+                    "reason": "", "difficulty": "Easy", "implementation_time": "2 hours",
+                    "expected_monthly_saving": "$0", "latency_improvement": "0%"}]},
+    ]}
+    roadmap = _build_optimization_roadmap(raw)
     assert len(roadmap) == 1
-    assert roadmap[0]["title"] == "Immediate Wins"
+    assert roadmap[0]["title"] == "Quick Wins"
 
 
 def test_roadmap_multiple_tasks_in_phase():
-    recs = [
-        {"priority": "HIGH", "title": f"Task {i}", "category": "Security",
-         "difficulty": "Easy", "implementation_time": "1 hour"}
-        for i in range(4)
-    ]
-    roadmap = _build_optimization_roadmap(recs)
-    assert roadmap[0]["title"] == "Immediate Wins"
+    raw = {"dynamic_roadmap": [
+        {"phase": 1, "title": "Quick Wins", "timeline": "Today",
+         "tasks": [
+             {"title": f"Task {i}", "priority": "HIGH", "category": "Security",
+              "reason": "", "difficulty": "Easy", "implementation_time": "1 hour",
+              "expected_monthly_saving": "$0", "latency_improvement": "0%"}
+             for i in range(4)
+         ]},
+    ]}
+    roadmap = _build_optimization_roadmap(raw)
+    assert roadmap[0]["title"] == "Quick Wins"
     assert len(roadmap[0]["tasks"]) == 4
 
 
-def test_roadmap_empty_recs():
-    assert _build_optimization_roadmap([]) == []
+def test_roadmap_empty_dynamic_roadmap():
+    assert _build_optimization_roadmap({"dynamic_roadmap": []}) == []
+
+
+def test_roadmap_missing_key_returns_empty():
+    assert _build_optimization_roadmap({}) == []
 
 
 # ---------------------------------------------------------------------------
@@ -421,7 +458,9 @@ def test_generate_roadmap_phase_shape():
         assert "tasks"    in phase
         assert isinstance(phase["tasks"], list)
         for task in phase["tasks"]:
-            assert isinstance(task, str)
+            assert isinstance(task, dict)
+            assert "title" in task
+            assert "priority" in task
 
 
 def test_generate_roadmap_timelines():
@@ -429,6 +468,13 @@ def test_generate_roadmap_timelines():
     roadmap = report["optimization_roadmap"]
     timelines = {p["timeline"] for p in roadmap}
     assert timelines.issubset({"Today", "This Week", "This Month"})
+
+
+def test_generate_roadmap_phase_titles_new():
+    report = ReportGenerator().generate(_raw_report())
+    roadmap = report["optimization_roadmap"]
+    titles = {p["title"] for p in roadmap}
+    assert titles.issubset({"Quick Wins", "Performance Improvements", "Production Scaling"})
 
 
 def test_generate_intelligence_summary_passed_through():
@@ -451,10 +497,12 @@ def test_generate_recommendations_preserved():
     assert len(recs) == 4
 
 
-def test_generate_roadmap_tasks_are_strings():
-    """Each task in the roadmap must be a plain string (rec title)."""
+def test_generate_roadmap_tasks_are_rich_dicts():
+    """Each task in the roadmap must be a rich dict with at least title and priority."""
     report = ReportGenerator().generate(_raw_report())
     roadmap = report["optimization_roadmap"]
     for phase in roadmap:
         for task in phase["tasks"]:
-            assert isinstance(task, str) and len(task) > 0
+            assert isinstance(task, dict)
+            assert isinstance(task.get("title"), str) and len(task["title"]) > 0
+            assert task.get("priority") in {"HIGH", "MEDIUM", "LOW"}

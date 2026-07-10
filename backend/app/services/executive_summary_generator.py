@@ -137,6 +137,41 @@ def _highest_priority_action(recommendations: list[dict]) -> str:
     return f"{title}."
 
 
+_DIMENSIONS_REVIEWED = (
+    "cost efficiency, reliability, scalability, security, latency, and RAG retrieval quality"
+)
+
+_FINAL_REC_THRESHOLDS: list[tuple[int, str]] = [
+    (90, (
+        "The architecture demonstrates strong engineering discipline. "
+        "The recommended optimizations are incremental improvements that will push performance "
+        "and cost efficiency to enterprise-grade standards."
+    )),
+    (75, (
+        "With the identified improvements in place, this system can meet production "
+        "reliability and cost targets. Prioritise the high-priority items before the next "
+        "release milestone to reduce operational risk."
+    )),
+    (60, (
+        "Several foundational gaps must be addressed before this system is suitable for "
+        "sustained production traffic. The engineering team should treat the high-priority "
+        "findings as blocking issues and resolve them in the current sprint."
+    )),
+    (0, (
+        "This architecture carries significant production risk and is not ready for live "
+        "traffic at scale. A focused remediation effort targeting the critical findings "
+        "should be undertaken before any production deployment."
+    )),
+]
+
+
+def _final_recommendation(score: int) -> str:
+    for threshold, text in _FINAL_REC_THRESHOLDS:
+        if score >= threshold:
+            return text
+    return _FINAL_REC_THRESHOLDS[-1][1]
+
+
 def _build_narrative_summary(
     project_name: str,
     overall_score: int,
@@ -144,41 +179,103 @@ def _build_narrative_summary(
     n_findings: int,
     n_recs: int,
     n_high: int,
+    n_critical: int,
     production_score: int,
     estimated_saving: str,
     latency_improvement: str,
+    top_risk_title: str,
+    top_action_titles: list[str],
 ) -> str:
-    """Generate a concise, professional narrative (≤120 words)."""
+    """Generate a professional consulting-grade narrative (Gartner / McKinsey style).
 
-    # Opening — score + assessment
-    parts: list[str] = [
-        f"ArchitectIQ analyzed {project_name} and assigned an overall architecture score "
-        f"of {overall_score}/100 ({assessment})."
-    ]
+    Tone and content adapt to three tiers:
+      • Excellent (≥ 85): optimistic, incremental focus
+      • Moderate (60-84): balanced, improvement-focused
+      • Poor (< 60):      warning-led, risk-first
+    """
 
-    # Findings sentence
-    if n_findings > 0:
-        severity_note = "several critical" if n_high >= 3 else ("some" if n_findings > 4 else "a few")
+    parts: list[str] = []
+
+    # ── Sentence 1: Scope ────────────────────────────────────────────────────
+    parts.append(
+        f"ArchitectIQ analyzed {project_name} across {_DIMENSIONS_REVIEWED}."
+    )
+
+    # ── Sentence 2: Findings ─────────────────────────────────────────────────
+    if n_findings == 0:
         parts.append(
-            f"The review identified {n_findings} finding{'s' if n_findings != 1 else ''} "
-            f"with {n_high} high-priority issue{'s' if n_high != 1 else ''} requiring immediate attention."
+            "The review found no significant architectural deficiencies — "
+            "the system meets all evaluated quality criteria."
         )
     else:
-        parts.append("No critical issues were identified.")
-
-    # Production readiness
-    pr_label = "production-ready" if production_score >= 80 else (
-        "approaching production readiness" if production_score >= 60 else "not yet production-ready"
-    )
-    parts.append(f"The system is {pr_label} (readiness score: {production_score}/100).")
-
-    # Savings / latency
-    if estimated_saving and estimated_saving != "$0":
+        high_note = ""
+        if n_high > 0:
+            high_note = (
+                f", including {n_high} high-priority "
+                f"issue{'s' if n_high != 1 else ''} affecting production readiness"
+            )
+        elif n_critical > 0:
+            high_note = (
+                f", including {n_critical} critical "
+                f"issue{'s' if n_critical != 1 else ''} requiring immediate remediation"
+            )
         parts.append(
-            f"Applying the {n_recs} recommendation{'s' if n_recs != 1 else ''} could reduce "
-            f"monthly inference costs by approximately {estimated_saving} "
-            f"and improve response latency by up to {latency_improvement}."
+            f"The review identified {n_findings} "
+            f"finding{'s' if n_findings != 1 else ''}{high_note}."
         )
+
+    # ── Sentence 3: Highest risk ─────────────────────────────────────────────
+    if top_risk_title:
+        parts.append(f"The most critical risk is: {top_risk_title}.")
+
+    # ── Sentence 4: Top optimization actions ─────────────────────────────────
+    if top_action_titles:
+        if len(top_action_titles) == 1:
+            actions_str = top_action_titles[0]
+        elif len(top_action_titles) == 2:
+            actions_str = f"{top_action_titles[0]} and {top_action_titles[1]}"
+        else:
+            actions_str = (
+                f"{', '.join(top_action_titles[:-1])}, "
+                f"and {top_action_titles[-1]}"
+            )
+        parts.append(
+            f"The most impactful optimizations are {actions_str}."
+        )
+
+    # ── Sentence 5: Savings / latency ────────────────────────────────────────
+    has_saving  = bool(estimated_saving and estimated_saving not in ("$0", "$0.00"))
+    has_latency = bool(latency_improvement and latency_improvement not in ("0%", "0.0%"))
+    if has_saving and has_latency:
+        parts.append(
+            f"These optimizations are expected to reduce monthly AI infrastructure costs "
+            f"by approximately {estimated_saving} while improving average response "
+            f"latency by {latency_improvement}."
+        )
+    elif has_saving:
+        parts.append(
+            f"Implementing these recommendations could reduce monthly AI infrastructure "
+            f"costs by approximately {estimated_saving}."
+        )
+    elif has_latency:
+        parts.append(
+            f"Applying these changes is expected to improve average response latency "
+            f"by {latency_improvement}."
+        )
+
+    # ── Sentence 6: Production readiness ─────────────────────────────────────
+    pr_qualifier = (
+        "meets production readiness standards"   if production_score >= 80 else
+        "is approaching production readiness"    if production_score >= 65 else
+        "has not yet reached production readiness"
+    )
+    parts.append(
+        f"Overall production readiness is {production_score}/100 — "
+        f"the system {pr_qualifier}."
+    )
+
+    # ── Sentence 7: Final recommendation ─────────────────────────────────────
+    parts.append(_final_recommendation(overall_score))
 
     return " ".join(parts)
 
@@ -232,8 +329,23 @@ class ExecutiveSummaryGenerator:
         risks        = _top_risks(top_findings)
         top_action   = _highest_priority_action(rich_recs if rich_recs else recommendations)
 
-        n_high = sum(1 for f in top_findings if f.get("severity") == "HIGH")
-        n_recs = len(recommendations)
+        n_high     = sum(1 for f in top_findings if f.get("severity") == "HIGH")
+        n_critical = sum(1 for f in top_findings if f.get("severity") == "CRITICAL")
+        n_recs     = len(recommendations)
+
+        # Highest-risk finding title (first HIGH finding, or first finding overall)
+        high_findings = [f for f in top_findings if f.get("severity") == "HIGH"]
+        top_risk_title = (
+            (high_findings[0].get("title") or "").strip()
+            if high_findings
+            else ((top_findings[0].get("title") or "").strip() if top_findings else "")
+        )
+
+        # Top-3 action titles from rich recommendations
+        top_action_titles = [
+            r["title"] for r in (rich_recs if rich_recs else recommendations)[:3]
+            if r.get("title")
+        ]
 
         summary = _build_narrative_summary(
             project_name=request.project_name,
@@ -242,9 +354,12 @@ class ExecutiveSummaryGenerator:
             n_findings=len(top_findings),
             n_recs=n_recs,
             n_high=n_high,
+            n_critical=n_critical,
             production_score=production_score,
             estimated_saving=estimated_saving,
             latency_improvement=latency_improvement,
+            top_risk_title=top_risk_title,
+            top_action_titles=top_action_titles,
         )
 
         return {

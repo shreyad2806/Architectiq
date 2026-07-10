@@ -126,7 +126,6 @@ def test_generate_output_keys():
         production_score=75,
         top_findings=_make_findings(),
         recommendations=[{"title": "Rec A", "priority": "HIGH"}],
-        cost_result={"potential_monthly_savings": 500},
         advanced_rec_report=_make_advanced_report(),
     )
     required = [
@@ -150,7 +149,6 @@ def test_generate_architecture_score_matches():
         production_score=80,
         top_findings=[],
         recommendations=[],
-        cost_result={},
         advanced_rec_report=_make_advanced_report(),
     )
     assert result["architecture_score"] == 88
@@ -163,7 +161,6 @@ def test_generate_maturity_level_structure():
         production_score=85,
         top_findings=[],
         recommendations=[],
-        cost_result={},
         advanced_rec_report=_make_advanced_report(),
     )
     ml = result["ai_maturity_level"]
@@ -186,7 +183,6 @@ def test_generate_verdict_matches_score():
             production_score=70,
             top_findings=[],
             recommendations=[],
-            cost_result={},
             advanced_rec_report=_make_advanced_report(),
         )
         assert result["overall_verdict"] == expected_verdict, (
@@ -206,7 +202,6 @@ def test_generate_critical_risks_only_high():
         production_score=65,
         top_findings=findings,
         recommendations=[],
-        cost_result={},
         advanced_rec_report=_make_advanced_report(),
     )
     assert "Auth Disabled" in result["critical_risks"]
@@ -221,7 +216,6 @@ def test_generate_top_priorities_max_three():
         production_score=65,
         top_findings=[],
         recommendations=[{"title": f"R{i}", "priority": "HIGH"} for i in range(6)],
-        cost_result={},
         advanced_rec_report=_make_advanced_report(),
     )
     assert len(result["top_priorities"]) <= 3
@@ -234,7 +228,6 @@ def test_generate_savings_and_latency_from_advanced_report():
         production_score=78,
         top_findings=[],
         recommendations=[],
-        cost_result={"potential_monthly_savings": 999},
         advanced_rec_report=_make_advanced_report(saving="$1,234", latency="41%"),
     )
     assert result["estimated_monthly_savings"] == "$1,234"
@@ -248,7 +241,6 @@ def test_generate_executive_summary_non_empty():
         production_score=75,
         top_findings=_make_findings(n_high=2),
         recommendations=[{"title": "Enable caching", "priority": "HIGH"}],
-        cost_result={},
         advanced_rec_report=_make_advanced_report(),
     )
     summary = result["executive_summary"]
@@ -264,7 +256,6 @@ def test_generate_no_critical_risks_when_no_high_findings():
         top_findings=[{"severity": "MEDIUM", "title": "Minor issue",
                        "description": "", "impact": ""}],
         recommendations=[],
-        cost_result={},
         advanced_rec_report=_make_advanced_report(),
     )
     assert result["critical_risks"] == []

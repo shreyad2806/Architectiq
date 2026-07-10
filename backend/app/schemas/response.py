@@ -146,7 +146,7 @@ class EstimateResponse(BaseModel):
 
     total_monthly_cost: float = Field(
         ...,
-        description="Total estimated monthly cost in USD.",
+        description="Total estimated monthly cost in USD (gross, before savings).",
         ge=0,
         examples=[12450.00],
     )
@@ -155,7 +155,7 @@ class EstimateResponse(BaseModel):
         description="Per-model or per-component cost breakdown.",
         examples=[
             [
-                {"component": "gpt-4", "monthly_cost": 8200.00},
+                {"component": "gpt-4o", "monthly_cost": 8200.00},
                 {"component": "embedding", "monthly_cost": 1200.00},
             ]
         ],
@@ -183,6 +183,23 @@ class EstimateResponse(BaseModel):
         default="USD",
         description="Currency code for all monetary values.",
         examples=["USD"],
+    )
+    breakdown: dict | None = Field(
+        default=None,
+        description=(
+            "Detailed cost breakdown with individual line items: "
+            "llm_cost, embedding_cost, vector_db_cost, storage_cost, "
+            "infrastructure_cost, estimated_savings, monthly_cost."
+        ),
+        examples=[{
+            "monthly_cost": 2140.0,
+            "llm_cost": 1680.0,
+            "embedding_cost": 130.0,
+            "vector_db_cost": 90.0,
+            "storage_cost": 40.0,
+            "infrastructure_cost": 200.0,
+            "estimated_savings": 720.0,
+        }],
     )
 
     model_config = {

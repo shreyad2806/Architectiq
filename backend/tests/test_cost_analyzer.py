@@ -1,7 +1,7 @@
 import pytest
 
 from app.schemas import ReviewRequest
-from app.services.cost_analyzer import CostAnalyzer
+from app.services.cost_analyzer import CostAnalyzer, DetailedCostEstimator
 
 
 @pytest.fixture
@@ -35,18 +35,25 @@ def test_cost_analyzer_tokens(sample_review_request):
 
 
 def test_cost_analyzer_cost_and_savings(sample_review_request):
+    """Gross total must be larger than LLM-only cost; savings must be positive."""
     analyzer = CostAnalyzer()
     result = analyzer.analyze(sample_review_request)
+    bd = result["breakdown"]
 
-    # Expected tokens: 100_000 * (1_400 + 500) = 190_000_000
-    # gpt-4o cost: (140M/1M * 2.50) + (50M/1M * 10.00) = 350 + 500 = 850
-    # gpt-4o-mini baseline: (140M/1M * 0.15) + (50M/1M * 0.60) = 21 + 30 = 51
-    # savings: 850 - 51 = 799
-    assert result["estimated_monthly_cost"] == 850.0
-    assert result["potential_monthly_savings"] == 799.0
+    # LLM inference:  (140M * $2.50 + 50M * $10.00) / 1M = 350 + 500 = 850
+    assert bd["llm_cost"] == 850.0
+
+    # Total includes VDB, storage, infra overhead — must exceed LLM alone
+    assert result["estimated_monthly_cost"] > bd["llm_cost"]
+
+    # Savings = model-switch saving (gpt-4o vs gpt-4o-mini baseline)
+    # gpt-4o-mini: 140M*0.15 + 50M*0.60 = 21+30 = 51  → saving = 850-51 = 799
+    assert bd["savings_from_model_switch"] == 799.0
+    assert result["potential_monthly_savings"] > 0
 
 
-def test_cost_analyzer_llama3_is_free():
+def test_cost_analyzer_llama3_has_zero_llm_cost():
+    """llama3 LLM inference is free; infra/storage still contribute a small total."""
     request = ReviewRequest(
         project_name="OpenSource",
         llm="llama3",
@@ -68,6 +75,13 @@ def test_cost_analyzer_llama3_is_free():
         retry_strategy=False,
     )
     result = CostAnalyzer().analyze(request)
+    bd = result["breakdown"]
     assert result["estimated_monthly_tokens"] == 120_000_000
-    assert result["estimated_monthly_cost"] == 0.0
+    # LLM inference must be $0 for self-hosted llama3
+    assert bd["llm_cost"] == 0.0
+    # Embedding is also zero (RAG disabled)
+    assert bd["embedding_cost"] == 0.0
+    # Vector DB is zero (RAG disabled)
+    assert bd["vector_db_cost"] == 0.0
+    # No model-switch saving (already at minimum cost)
     assert result["potential_monthly_savings"] == 0.0
