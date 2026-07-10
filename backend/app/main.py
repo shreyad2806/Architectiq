@@ -93,3 +93,11 @@ async def global_exception_handler(request: Request, exc: Exception) -> JSONResp
 def startup_event():
     logger.info("ArchitectIQ API starting up...")
     logger.info("Application initialized successfully")
+
+@app.get("/skill.md", include_in_schema=False)
+async def skill_md():
+    return FileResponse(
+        path="SKILL.md",
+        media_type="text/markdown",
+        filename="SKILL.md"
+    )
