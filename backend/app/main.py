@@ -53,7 +53,7 @@ and generates optimization recommendations.
 _ALLOWED_ORIGINS = [
     "http://localhost:5173",   # Vite / React dev server
     "http://localhost:3000",   # CRA / alternative dev server
-    "https://architectiq-liard.vercel.app/", 
+    "https://architectiq-liard.vercel.app",
 ]
 
 app.add_middleware(
