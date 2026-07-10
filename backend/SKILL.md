@@ -1,5 +1,29 @@
 # ArchitectIQ
 
+## Service Information
+
+**Service Name:** ArchitectIQ
+
+**Description:**
+AI Architecture Review & Cost Optimization API for analyzing AI system architectures, estimating production costs, evaluating production readiness, and generating optimization recommendations.
+
+**Base URL**
+https://architectiq.onrender.com
+
+**API Documentation**
+https://architectiq.onrender.com/docs
+
+**OpenAPI Specification**
+https://architectiq.onrender.com/openapi.json
+
+**SKILL.md**
+https://architectiq.onrender.com/skill.md
+
+**GitHub Repository**
+https://github.com/shreyad2806/Architectiq
+
+---
+
 ## Overview
 
 ArchitectIQ is a REST API and web platform that performs automated architecture reviews of AI systems.
@@ -274,6 +298,115 @@ Returns this document. Hidden from OpenAPI schema. Media type: `text/markdown`.
 
 ---
 
+## How to Use
+
+Follow these steps to use ArchitectIQ:
+
+1. Verify the service is online by visiting `/health`.
+2. Review the API documentation at `/docs` or inspect the OpenAPI specification at `/openapi.json`.
+3. Send a POST request to `/api/v1/review` with your AI architecture configuration to receive a complete architecture audit.
+4. Use `/api/v1/estimate` if you only need infrastructure and LLM cost estimation.
+5. Use `/api/v1/recommend` if you only want optimization recommendations.
+6. Parse the JSON response and use the architecture score, production readiness, recommendations, and roadmap in your application or AI agent.
+7. Retrieve this document anytime from `/skill.md`.
+
+---
+
+## cURL Examples
+
+### Health Check
+
+```bash
+curl https://architectiq.onrender.com/health
+```
+
+### Architecture Review
+
+```bash
+curl -X POST https://architectiq.onrender.com/api/v1/review \
+  -H "Content-Type: application/json" \
+  -d '{
+    "project_name": "Demo",
+    "llm": "gpt-4o",
+    "embedding_model": "text-embedding-3-small",
+    "vector_db": "pinecone",
+    "framework": "FastAPI",
+    "prompt_strategy": "few-shot",
+    "monthly_requests": 100000,
+    "average_prompt_tokens": 1400,
+    "average_completion_tokens": 500,
+    "context_window": 128000,
+    "concurrent_users": 5000,
+    "rag_enabled": true,
+    "cache_enabled": false,
+    "authentication": false,
+    "rate_limiting": false,
+    "retry_strategy": false,
+    "logging": false,
+    "monitoring": false,
+    "tracing": false,
+    "metrics": false,
+    "health_endpoint": false,
+    "prompt_injection_protection": false,
+    "input_validation": false
+  }'
+```
+
+### Cost Estimation
+
+```bash
+curl -X POST https://architectiq.onrender.com/api/v1/estimate \
+  -H "Content-Type: application/json" \
+  -d '{
+    "project_name": "Demo",
+    "llm": "gpt-4o",
+    "embedding_model": "text-embedding-3-small",
+    "vector_db": "pinecone",
+    "framework": "FastAPI",
+    "prompt_strategy": "few-shot",
+    "monthly_requests": 100000,
+    "average_prompt_tokens": 1400,
+    "average_completion_tokens": 500,
+    "context_window": 128000,
+    "concurrent_users": 5000,
+    "rag_enabled": true,
+    "cache_enabled": false
+  }'
+```
+
+### Optimization Recommendations
+
+```bash
+curl -X POST https://architectiq.onrender.com/api/v1/recommend \
+  -H "Content-Type: application/json" \
+  -d '{
+    "project_name": "Demo",
+    "llm": "gpt-4o",
+    "embedding_model": "text-embedding-3-small",
+    "vector_db": "pinecone",
+    "framework": "FastAPI",
+    "prompt_strategy": "few-shot",
+    "monthly_requests": 100000,
+    "average_prompt_tokens": 1400,
+    "average_completion_tokens": 500,
+    "context_window": 128000,
+    "concurrent_users": 5000,
+    "rag_enabled": true,
+    "cache_enabled": false,
+    "authentication": false,
+    "rate_limiting": false,
+    "retry_strategy": false
+  }'
+```
+
+### SKILL.md
+
+```bash
+curl https://architectiq.onrender.com/skill.md
+```
+
+---
+
 ## Tech Stack
 
 | Layer | Technology |
@@ -312,7 +445,24 @@ Returns this document. Hidden from OpenAPI schema. Media type: `text/markdown`.
 
 ## Repository
 
-- **Frontend:** https://architectiq-liard.vercel.app
-- **Backend API:** https://architectiq.onrender.com
-- **API Docs:** https://architectiq.onrender.com/docs
-- **Author:** Shreya Dubey — https://github.com/shreyad2806
+**GitHub**
+https://github.com/shreyad2806/Architectiq
+
+**Frontend**
+https://architectiq-liard.vercel.app
+
+**Backend API**
+https://architectiq.onrender.com
+
+**API Documentation**
+https://architectiq.onrender.com/docs
+
+**OpenAPI**
+https://architectiq.onrender.com/openapi.json
+
+**SKILL.md**
+https://architectiq.onrender.com/skill.md
+
+**Author**
+Shreya Dubey
+https://github.com/shreyad2806
