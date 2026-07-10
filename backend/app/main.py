@@ -2,7 +2,7 @@ import traceback
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, FileResponse
 from app.api.health import router as health_router
 from app.api.review import router as review_router
 from app.api.estimate import router as estimate_router
