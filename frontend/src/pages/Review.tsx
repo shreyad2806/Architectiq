@@ -33,9 +33,11 @@ const DEFAULTS = {
   input_validation: false,
 }
 
+type FormState = typeof DEFAULTS
+
 // ─── Re-usable primitives ─────────────────────────────────────────────────
 
-function Label({ children }) {
+function Label({ children }: { children: React.ReactNode }) {
   return (
     <label className="block font-mono text-[11px] uppercase tracking-widest text-slate-500 mb-1.5">
       {children}
@@ -43,7 +45,7 @@ function Label({ children }) {
   )
 }
 
-function TextInput({ value, onChange, placeholder = '' }) {
+function TextInput({ value, onChange, placeholder = '' }: { value: string; onChange: (v: string) => void; placeholder?: string }) {
   return (
     <input
       type="text"
@@ -56,7 +58,7 @@ function TextInput({ value, onChange, placeholder = '' }) {
   )
 }
 
-function NumberInput({ value, onChange }) {
+function NumberInput({ value, onChange }: { value: number; onChange: (v: number) => void }) {
   return (
     <input
       type="number"
@@ -68,7 +70,7 @@ function NumberInput({ value, onChange }) {
   )
 }
 
-function SelectInput({ value, onChange, options }) {
+function SelectInput({ value, onChange, options }: { value: string; onChange: (v: string) => void; options: string[] }) {
   return (
     <select
       value={value}
@@ -84,7 +86,7 @@ function SelectInput({ value, onChange, options }) {
   )
 }
 
-function Toggle({ label, checked, onChange }) {
+function Toggle({ label, checked, onChange }: { label: string; checked: boolean; onChange: (v: boolean) => void }) {
   return (
     <label className="flex cursor-pointer items-center justify-between rounded-lg border border-white/[0.07] bg-[#0c0f19] px-4 py-3 transition-colors hover:border-white/[0.14]">
       <span className="text-[13px] text-slate-300">{label}</span>
@@ -105,7 +107,7 @@ function Toggle({ label, checked, onChange }) {
   )
 }
 
-function SectionTitle({ label, title }) {
+function SectionTitle({ label, title }: { label: string; title: string }) {
   return (
     <div className="mb-6">
       <p className="font-mono text-[10px] uppercase tracking-widest text-[#8b7ff0]">{label}</p>
@@ -114,7 +116,7 @@ function SectionTitle({ label, title }) {
   )
 }
 
-function Card({ children, className = '' }) {
+function Card({ children, className = '' }: { children: React.ReactNode; className?: string }) {
   return (
     <div className={`rounded-xl border border-white/[0.07] bg-[#090c14] p-6 ${className}`}>
       {children}
@@ -124,7 +126,7 @@ function Card({ children, className = '' }) {
 
 // ─── Live Preview Panel ───────────────────────────────────────────────────
 
-function PreviewPanel({ form }) {
+function PreviewPanel({ form }: { form: FormState }) {
   const preview = {
     project_name: form.project_name || '—',
     llm: form.llm,
@@ -167,7 +169,7 @@ function PreviewPanel({ form }) {
 
 // ─── Error card ───────────────────────────────────────────────────────────
 
-function ErrorCard({ message, onRetry }) {
+function ErrorCard({ message, onRetry }: { message: string; onRetry: () => void }) {
   return (
     <div className="rounded-xl border border-red-500/20 bg-red-500/[0.06] p-5">
       <div className="flex items-start gap-3">
@@ -197,33 +199,33 @@ export default function Review() {
   const navigate = useNavigate()
   const [form, setForm] = useState(DEFAULTS)
   const [loading, setLoading] = useState(false)
-  const [error, setError] = useState(null)
+  const [error, setError] = useState<string | null>(null)
 
-  function set(key) {
-    return (value) => setForm(prev => ({ ...prev, [key]: value }))
+  function set(key: keyof FormState) {
+    return (value: FormState[typeof key]) => setForm(prev => ({ ...prev, [key]: value }))
   }
 
   async function submit() {
     setError(null)
     setLoading(true)
     try {
-      const data = await api.review(form)
+      const data = await api.review(form as Record<string, unknown>)
       navigate('/loading', { state: { request: form, response: data } })
     } catch (err) {
-      setError(err?.message || 'Request failed')
+      setError((err as Error)?.message || 'Request failed')
     } finally {
       setLoading(false)
     }
   }
 
-  function handleSubmit(e) {
+  function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     submit()
   }
 
   const canSubmit = !loading && form.project_name.trim().length > 0
 
-  const SubmitButton = ({ fullWidth = false }) => (
+  const SubmitButton = ({ fullWidth = false }: { fullWidth?: boolean }) => (
     <button
       type="submit"
       disabled={!canSubmit}
