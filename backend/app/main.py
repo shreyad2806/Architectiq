@@ -6,6 +6,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from app.api.health import router as health_router
+from app.api.repository import router as repository_router
 from app.api.review import router as review_router
 from app.api.estimate import router as estimate_router
 from app.api.recommend import router as recommend_router
@@ -70,6 +71,7 @@ app.include_router(health_router)
 app.include_router(review_router, prefix="/api/v1")
 app.include_router(estimate_router, prefix="/api/v1")
 app.include_router(recommend_router, prefix="/api/v1")
+app.include_router(repository_router, prefix="/api/v1")
 
 
 # ---------------------------------------------------------------------------
