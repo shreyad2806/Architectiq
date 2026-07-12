@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from pydantic import BaseModel, Field, HttpUrl, model_validator
+from pydantic import BaseModel, Field, HttpUrl
 
 
 class RepositoryUploadRequest(BaseModel):
@@ -90,3 +90,190 @@ class RepositoryMetadata(BaseModel):
         description="Absolute path to the temporary directory holding the cloned/extracted repository.",
         examples=["/tmp/architectiq_abc123"],
     )
+
+
+# ---------------------------------------------------------------------------
+# Phase 2.2 — Scan schemas
+# ---------------------------------------------------------------------------
+
+
+class RepositoryScanRequest(BaseModel):
+    """Request body for the repository scan endpoint."""
+
+    temp_directory: str = Field(
+        ...,
+        description=(
+            "Absolute path to a previously uploaded/cloned repository returned by "
+            "POST /api/v1/repository/upload."
+        ),
+        examples=["/tmp/Architectiq_abc123"],
+    )
+    repository_name: str = Field(
+        ...,
+        description="Repository name from the upload response.",
+        examples=["Architectiq"],
+    )
+
+    model_config = {
+        "json_schema_extra": {
+            "example": {
+                "temp_directory": "/tmp/Architectiq_abc123",
+                "repository_name": "Architectiq",
+            }
+        }
+    }
+
+
+class DetectedDependencyFile(BaseModel):
+    """A dependency or configuration file found in the repository."""
+
+    path: str = Field(..., description="Relative path from the repository root.", examples=["backend/requirements.txt"])
+    file_type: str = Field(
+        ...,
+        description="Canonical type label for this file.",
+        examples=["requirements.txt"],
+    )
+
+
+class DetectedSDK(BaseModel):
+    """An AI/ML SDK or library detected in the repository."""
+
+    name: str = Field(..., description="SDK or library name.", examples=["openai"])
+    category: str = Field(
+        ...,
+        description="Category of the SDK.",
+        examples=["LLM", "VectorDB", "Framework", "Orchestration"],
+    )
+    detected_in: list[str] = Field(
+        default_factory=list,
+        description="Relative paths of files where this SDK was detected.",
+        examples=[["backend/requirements.txt", "backend/app/main.py"]],
+    )
+
+
+class CIInfo(BaseModel):
+    """CI/CD workflow information."""
+
+    platform: str = Field(..., description="CI/CD platform name.", examples=["GitHub Actions"])
+    workflow_files: list[str] = Field(
+        default_factory=list,
+        description="Relative paths of CI/CD workflow files.",
+        examples=[[".github/workflows/ci.yml"]],
+    )
+
+
+class InfrastructureFiles(BaseModel):
+    """Infrastructure and containerisation files detected."""
+
+    dockerfiles: list[str] = Field(
+        default_factory=list,
+        description="Relative paths of Dockerfiles.",
+        examples=[["backend/Dockerfile"]],
+    )
+    docker_compose_files: list[str] = Field(
+        default_factory=list,
+        description="Relative paths of docker-compose files.",
+        examples=[["docker-compose.yml"]],
+    )
+    kubernetes_manifests: list[str] = Field(
+        default_factory=list,
+        description="Relative paths of Kubernetes manifest files.",
+        examples=[["k8s/deployment.yaml"]],
+    )
+    terraform_files: list[str] = Field(
+        default_factory=list,
+        description="Relative paths of Terraform configuration files.",
+        examples=[["infra/main.tf"]],
+    )
+
+
+class EnvironmentConfig(BaseModel):
+    """Environment and configuration files detected."""
+
+    env_files: list[str] = Field(
+        default_factory=list,
+        description="Relative paths of .env and .env.* files.",
+        examples=[[".env.example"]],
+    )
+    has_env_example: bool = Field(
+        default=False,
+        description="Whether a .env.example or .env.sample file is present.",
+    )
+    config_files: list[str] = Field(
+        default_factory=list,
+        description="Other configuration files detected (e.g. .toml, .ini, pyproject.toml).",
+        examples=[["backend/pyproject.toml"]],
+    )
+
+
+class RepositoryScanResponse(BaseModel):
+    """Structured scan results for an uploaded repository."""
+
+    repository_name: str = Field(..., description="Name of the scanned repository.", examples=["Architectiq"])
+    temp_directory: str = Field(..., description="Absolute path to the temporary repository directory.")
+
+    # Languages
+    languages: list[str] = Field(
+        default_factory=list,
+        description="Programming languages detected (by file extension), ordered by prevalence.",
+        examples=[["Python", "TypeScript", "JavaScript"]],
+    )
+
+    # Frameworks
+    frameworks: list[str] = Field(
+        default_factory=list,
+        description="Web/backend frameworks detected.",
+        examples=[["FastAPI", "React"]],
+    )
+
+    # Package managers
+    package_managers: list[str] = Field(
+        default_factory=list,
+        description="Package managers detected (e.g. pip, npm, poetry, cargo).",
+        examples=[["pip", "npm"]],
+    )
+
+    # Dependency files
+    dependency_files: list[DetectedDependencyFile] = Field(
+        default_factory=list,
+        description="Dependency and manifest files found in the repository.",
+    )
+
+    # AI/ML SDKs
+    detected_sdks: list[DetectedSDK] = Field(
+        default_factory=list,
+        description="AI/ML SDKs and libraries detected by scanning dependency files and source code.",
+    )
+
+    # Infrastructure
+    infrastructure: InfrastructureFiles = Field(
+        default_factory=InfrastructureFiles,
+        description="Containerisation and infrastructure files detected.",
+    )
+
+    # CI/CD
+    ci_cd: list[CIInfo] = Field(
+        default_factory=list,
+        description="CI/CD platforms and workflow files detected.",
+    )
+
+    # Environment
+    environment: EnvironmentConfig = Field(
+        default_factory=EnvironmentConfig,
+        description="Environment and configuration files detected.",
+    )
+
+    # README
+    readme_path: str | None = Field(
+        default=None,
+        description="Relative path to the README file, if found.",
+        examples=["README.md"],
+    )
+
+    # Summaries for quick access
+    has_dockerfile: bool = Field(default=False, description="True if at least one Dockerfile is present.")
+    has_docker_compose: bool = Field(default=False, description="True if a docker-compose file is present.")
+    has_kubernetes: bool = Field(default=False, description="True if Kubernetes manifests are present.")
+    has_ci_cd: bool = Field(default=False, description="True if any CI/CD workflow files are present.")
+    has_tests: bool = Field(default=False, description="True if a tests/ or test/ directory is present.")
+    has_readme: bool = Field(default=False, description="True if a README file is present.")

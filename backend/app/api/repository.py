@@ -5,8 +5,14 @@ import shutil
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile, status
 from pydantic import ValidationError
 
-from app.schemas.repository import RepositoryMetadata, RepositoryUploadRequest
+from app.schemas.repository import (
+    RepositoryMetadata,
+    RepositoryScanRequest,
+    RepositoryScanResponse,
+    RepositoryUploadRequest,
+)
 from app.services import repository_service
+from app.services import repository_scanner
 from app.utils.logger import logger
 
 router = APIRouter()
@@ -148,3 +154,100 @@ async def _handle_zip(file: UploadFile) -> RepositoryMetadata:
 
     logger.info(f"Processing ZIP upload: '{filename}' ({len(data)} bytes)")
     return repository_service.process_zip_upload(filename, data)
+
+
+# ---------------------------------------------------------------------------
+# Scan endpoint
+# ---------------------------------------------------------------------------
+
+
+@router.post(
+    "/repository/scan",
+    response_model=RepositoryScanResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Scan Repository",
+    description=(
+        "Scan a previously uploaded repository and return a structured analysis of its contents. "
+        "Detects programming languages, web and AI frameworks, package managers, dependency files, "
+        "AI/ML SDKs (OpenAI, Anthropic, LangChain, LlamaIndex, Pinecone, Chroma, Qdrant, etc.), "
+        "Dockerfiles, docker-compose, Kubernetes manifests, CI/CD workflows, README, and "
+        "environment configuration files.\n\n"
+        "Provide the `temp_directory` and `repository_name` returned by "
+        "`POST /api/v1/repository/upload`."
+    ),
+    response_description="Structured repository scan results.",
+    tags=[_TAG],
+    responses={
+        200: {
+            "description": "Structured repository scan results.",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "repository_name": "Architectiq",
+                        "temp_directory": "/tmp/Architectiq_abc123",
+                        "languages": ["Python", "TypeScript"],
+                        "frameworks": ["FastAPI", "React"],
+                        "package_managers": ["pip", "npm"],
+                        "dependency_files": [
+                            {"path": "backend/requirements.txt", "file_type": "requirements.txt"},
+                            {"path": "frontend/package.json", "file_type": "package.json"},
+                        ],
+                        "detected_sdks": [
+                            {"name": "fastapi", "category": "Framework", "detected_in": ["backend/requirements.txt"]},
+                            {"name": "openai", "category": "LLM", "detected_in": ["backend/requirements.txt"]},
+                        ],
+                        "infrastructure": {
+                            "dockerfiles": ["backend/Dockerfile"],
+                            "docker_compose_files": [],
+                            "kubernetes_manifests": [],
+                            "terraform_files": [],
+                        },
+                        "ci_cd": [{"platform": "GitHub Actions", "workflow_files": [".github/workflows/ci.yml"]}],
+                        "environment": {
+                            "env_files": [".env.example"],
+                            "has_env_example": True,
+                            "config_files": ["backend/pyproject.toml"],
+                        },
+                        "readme_path": "README.md",
+                        "has_dockerfile": True,
+                        "has_docker_compose": False,
+                        "has_kubernetes": False,
+                        "has_ci_cd": True,
+                        "has_tests": True,
+                        "has_readme": True,
+                    }
+                }
+            },
+        },
+        400: {"description": "temp_directory does not exist or is invalid."},
+        422: {"description": "Request validation error."},
+        500: {"description": "Unexpected server error during scanning."},
+    },
+)
+async def scan_repository(request: RepositoryScanRequest) -> RepositoryScanResponse:
+    """Scan an uploaded repository and return structured findings.
+
+    Args:
+        request: Contains ``temp_directory`` (from upload response) and ``repository_name``.
+
+    Returns:
+        ``RepositoryScanResponse`` with all detected artefacts.
+    """
+    try:
+        logger.info(
+            f"Repository scan request: name='{request.repository_name}', "
+            f"temp_dir='{request.temp_directory}'"
+        )
+        return repository_scanner.scan_repository(
+            temp_directory=request.temp_directory,
+            repository_name=request.repository_name,
+        )
+    except ValueError as exc:
+        logger.warning(f"Repository scan validation error: {exc}")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+    except Exception as exc:
+        logger.error(f"Unexpected error during repository scan: {exc}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An unexpected error occurred while scanning the repository.",
+        )

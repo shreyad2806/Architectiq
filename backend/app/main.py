@@ -45,6 +45,10 @@ and generates optimization recommendations.
         {
             "name": "Health",
             "description": "Service health monitoring endpoints."
+        },
+        {
+            "name": "Repository",
+            "description": "Upload and scan source code repositories to detect languages, frameworks, AI SDKs, and infrastructure."
         }
     ]
 )
