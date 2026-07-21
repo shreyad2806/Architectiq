@@ -29,7 +29,7 @@ Analyze production AI architectures, estimate infrastructure costs, detect archi
 
 ### 📖 API Documentation
 
-**https://architectiq-liard.vercel.app/#docs**
+**https://architectiq-liard.vercel.app/docs**
 
 ### ⚙️ Backend API
 
